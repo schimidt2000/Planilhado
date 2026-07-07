@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     take: 500,
   })
 
-  const matches = past.filter((t) => normalizeDescription(t.description) === normalized)
+  const matches = past.filter((t: typeof past[number]) => normalizeDescription(t.description) === normalized)
 
   if (matches.length === 0) return ok<SuggestionResult>({ confidence: 'low' })
 
