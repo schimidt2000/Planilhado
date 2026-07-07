@@ -21,12 +21,12 @@ export async function POST(req: NextRequest) {
   }
 
   const ids = updates.map((u) => u.id)
-  const existing = await prisma.transaction.findMany({
+  const existing: { id: string; userId: string }[] = await prisma.transaction.findMany({
     where: { id: { in: ids } },
     select: { id: true, userId: true },
   })
 
-  const unauthorized_ids = existing.filter((t) => t.userId !== userId)
+  const unauthorized_ids = existing.filter((t: { id: string; userId: string }) => t.userId !== userId)
   if (unauthorized_ids.length > 0) return forbidden()
 
   const result = await prisma.$transaction(
