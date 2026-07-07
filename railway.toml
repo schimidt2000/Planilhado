@@ -5,7 +5,7 @@ builder = "nixpacks"
 providers = ["node", "python"]
 
 [build.nixpacksPlan.packages]
-pkgs = ["python312", "python312Packages.pip"]
+pkgs = ["nodejs_20", "python312", "python312Packages.pip"]
 
 [build.nixpacksPlan.phases.setup]
 cmds = ["pip install pdfplumber"]
