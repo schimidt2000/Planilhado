@@ -34,7 +34,18 @@ export async function GET(req: NextRequest) {
   const sixMonthsAgo = new Date()
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
 
-  const past = await prisma.transaction.findMany({
+  type PastTx = {
+    description: string
+    category: string | null
+    subcategory: string | null
+    debtorName: string | null
+    transactionType: string | null
+    installmentCurrent: number | null
+    installmentTotal: number | null
+    date: Date
+  }
+
+  const past: PastTx[] = await prisma.transaction.findMany({
     where: {
       userId,
       status: 'approved',
@@ -54,14 +65,14 @@ export async function GET(req: NextRequest) {
     take: 500,
   })
 
-  const matches = past.filter((t: typeof past[number]) => normalizeDescription(t.description) === normalized)
+  const matches = past.filter((t: PastTx) => normalizeDescription(t.description) === normalized)
 
   if (matches.length === 0) return ok<SuggestionResult>({ confidence: 'low' })
 
   // Priority 1: installment continuity
   if (installmentTotal && installmentCurrent && installmentCurrent > 1) {
     const prevInstallment = matches.find(
-      (t) => t.installmentTotal === installmentTotal && t.installmentCurrent === installmentCurrent - 1
+      (t: PastTx) => t.installmentTotal === installmentTotal && t.installmentCurrent === installmentCurrent - 1
     )
     if (prevInstallment?.debtorName) {
       return ok<SuggestionResult>({
