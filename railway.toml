@@ -1,0 +1,20 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacksPlan]
+providers = ["node", "python"]
+
+[build.nixpacksPlan.packages]
+pkgs = ["python312", "python312Packages.pip"]
+
+[build.nixpacksPlan.phases.setup]
+cmds = ["pip install pdfplumber"]
+
+[deploy]
+startCommand = "npx prisma migrate deploy && npm start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+[deploy.healthcheck]
+path = "/api/auth/session"
+timeout = 30

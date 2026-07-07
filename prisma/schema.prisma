@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String          @id @default(cuid())
+  name         String
+  email        String          @unique
+  passwordHash String
+  createdAt    DateTime        @default(now())
+  sessions     ImportSession[]
+  transactions Transaction[]
+}
+
+model ImportSession {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month        String
+  source       String
+  inputType    String
+  createdAt    DateTime      @default(now())
+  transactions Transaction[]
+}
+
+model Transaction {
+  id                  String        @id @default(cuid())
+  importSessionId     String
+  importSession       ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date                DateTime
+  description         String
+  amountCents         Int
+  isCredit            Boolean       @default(false)
+  isCharge            Boolean       @default(false)
+  installmentCurrent  Int?
+  installmentTotal    Int?
+  currencyOriginal    String?
+  amountOriginalCents Int?
+  sourceType          String
+  rawLine             String?
+
+  status              String        @default("pending")
+  transactionType     String?
+  debtorName          String?
+  category            String?
+  subcategory         String?
+  notes               String?
+  isEssential         Boolean?
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([userId, importSessionId])
+  @@index([userId, date])
+  @@index([userId, status, description])
+}
