@@ -1,0 +1,4 @@
+providers = ["...", "python"]
+
+[phases.build]
+cmds = ["python -c \"import pdfplumber; print('pdfplumber ready')\"", "..."]

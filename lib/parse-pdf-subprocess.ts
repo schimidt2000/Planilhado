@@ -4,7 +4,8 @@ import type { ParseResult } from './types'
 
 export async function parsePDF(fileBuffer: Buffer, password?: string): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
-    const pythonPath = process.env.PYTHON_PATH || 'python3'
+    // Nixpacks exposes its Python virtualenv on PATH as `python`.
+    const pythonPath = process.env.PYTHON_PATH || 'python'
     const scriptPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'scripts', 'parse_pdf.py')
 
     const args = [scriptPath]
