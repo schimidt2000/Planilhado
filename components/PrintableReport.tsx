@@ -34,6 +34,7 @@ export function PrintableReport({ report }: Props) {
         <div className="border rounded-lg p-4 text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">A Receber</p>
           <p className="text-2xl font-bold text-green-600 mt-1">{formatCents(report.totalReceivableCents)}</p>
+          {report.totalPaidCents > 0 && <p className="text-xs text-muted-foreground">{formatCents(report.totalPaidCents)} já pago</p>}
         </div>
         <div className="border rounded-lg p-4 text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Líquido</p>
@@ -93,7 +94,10 @@ export function PrintableReport({ report }: Props) {
             {report.byDebtor.map((d) => (
               <div key={d.debtorName} className="flex justify-between items-center py-1 border-b last:border-0">
                 <span className="font-medium">{d.debtorName}</span>
-                <span className="text-green-600 font-bold">{formatCents(d.totalCents)}</span>
+                <span className="text-right">
+                  <span className="block text-green-600 font-bold">{formatCents(d.totalCents)} em aberto</span>
+                  {d.paidCents > 0 && <span className="text-xs text-muted-foreground">{formatCents(d.owedCents)} devido · {formatCents(d.paidCents)} pago</span>}
+                </span>
               </div>
             ))}
           </div>

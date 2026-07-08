@@ -29,7 +29,7 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
 
   const totalExpenseCents = transactions.reduce((sum, t) => sum + ownExpenseFor(t), 0)
 
-  const totalReceivableCents = transactions.reduce((sum, t) => sum + receivableFor(t), 0)
+  const totalReceivableGrossCents = transactions.reduce((sum, t) => sum + receivableFor(t), 0)
 
   const sourceMap: Record<string, number> = {}
   for (const t of transactions) {
@@ -93,22 +93,36 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   }
   const debtors = await prisma.debtor.findMany({
     where: { userId },
-    select: { name: true, whatsapp: true },
+    select: { id: true, name: true, whatsapp: true },
   })
-  const debtorContacts = new Map(debtors.map((d) => [d.name.toLowerCase(), d.whatsapp]))
+  const payments = await prisma.debtorPayment.groupBy({
+    by: ['debtorId'],
+    where: { userId, month },
+    _sum: { amountCents: true },
+  })
+  const paidByDebtorId = new Map(payments.map((payment) => [payment.debtorId, payment._sum.amountCents ?? 0]))
+  const debtorContacts = new Map(debtors.map((debtor) => [debtor.name.toLowerCase(), debtor]))
 
   const byDebtor = Object.entries(debtorMap)
-    .map(([debtorName, totalCents]) => {
-      const whatsapp = debtorContacts.get(debtorName.toLowerCase()) ?? null
-      const message = `Oi, ${debtorName}! Fechando as contas aqui: ficou ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)} para me passar referente a ${month}.`
+    .map(([debtorName, owedCents]) => {
+      const contact = debtorContacts.get(debtorName.toLowerCase())
+      const paidCents = contact ? paidByDebtorId.get(contact.id) ?? 0 : 0
+      const totalCents = Math.max(0, owedCents - paidCents)
+      const whatsapp = contact?.whatsapp ?? null
+      const message = `Oi, ${debtorName}! Fechando as contas aqui: o saldo ficou em ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)} referente a ${month}.`
       return {
+        debtorId: contact?.id ?? null,
         debtorName,
         totalCents,
+        owedCents,
+        paidCents,
         whatsapp,
         whatsappUrl: buildWhatsAppUrl(whatsapp, message),
       }
     })
     .sort((a, b) => b.totalCents - a.totalCents)
+  const totalPaidCents = byDebtor.reduce((sum, debtor) => sum + Math.min(debtor.paidCents, debtor.owedCents), 0)
+  const totalReceivableCents = Math.max(0, totalReceivableGrossCents - totalPaidCents)
 
   const monthlyTrend = []
   for (let i = 5; i >= 0; i--) {
@@ -145,6 +159,8 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     month,
     totalExpenseCents,
     totalReceivableCents,
+    totalReceivableGrossCents,
+    totalPaidCents,
     bySource,
     byCategory,
     byBudgetGroup,

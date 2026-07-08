@@ -64,10 +64,20 @@ export interface MonthlyReport {
   month: string
   totalExpenseCents: number
   totalReceivableCents: number
+  totalReceivableGrossCents: number
+  totalPaidCents: number
   bySource: { source: string; totalCents: number }[]
   byCategory: { category: string; totalCents: number; subcategories: { subcategory: string; totalCents: number }[] }[]
   byBudgetGroup: { group: BudgetGroup; label: string; targetPercent: number; totalCents: number; actualPercent: number }[]
-  byDebtor: { debtorName: string; totalCents: number; whatsapp?: string | null; whatsappUrl?: string | null }[]
+  byDebtor: {
+    debtorId?: string | null
+    debtorName: string
+    totalCents: number
+    owedCents: number
+    paidCents: number
+    whatsapp?: string | null
+    whatsappUrl?: string | null
+  }[]
   monthlyTrend: { month: string; totalCents: number; receivableCents: number }[]
   transactions: TransactionWithMeta[]
 }

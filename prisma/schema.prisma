@@ -15,6 +15,7 @@ model User {
   sessions     ImportSession[]
   transactions Transaction[]
   debtors      Debtor[]
+  debtorPayments DebtorPayment[]
 }
 
 model Debtor {
@@ -25,9 +26,26 @@ model Debtor {
   whatsapp  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  payments  DebtorPayment[]
 
   @@unique([userId, name])
   @@index([userId])
+}
+
+model DebtorPayment {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debtorId    String
+  debtor      Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  month       String
+  amountCents Int
+  paidAt      DateTime
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, month])
+  @@index([debtorId, month])
 }
 
 model ImportSession {

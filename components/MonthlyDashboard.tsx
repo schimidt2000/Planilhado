@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ExternalLink, FileText, Plus, TrendingUp } from 'lucide-react'
+import { FileText, Plus, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +10,7 @@ import { getBudgetGroup } from '@/lib/categories'
 import { SpendingDonut } from './charts/SpendingDonut'
 import { MonthlyTrend } from './charts/MonthlyTrend'
 import { DebtorBar } from './charts/DebtorBar'
+import { DebtorReceivables } from './DebtorReceivables'
 import type { MonthlyReport } from '@/lib/types'
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -68,6 +69,11 @@ export function MonthlyDashboard({ report, month }: Props) {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-green-600">{formatCents(report.totalReceivableCents)}</p>
+            {report.totalPaidCents > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {formatCents(report.totalReceivableGrossCents)} devido · {formatCents(report.totalPaidCents)} pago
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -150,28 +156,7 @@ export function MonthlyDashboard({ report, month }: Props) {
           <CardContent>
             <DebtorBar data={report.byDebtor} />
             {report.byDebtor.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {report.byDebtor.map((debtor) => (
-                  <div key={debtor.debtorName} className="flex items-center justify-between gap-3 rounded-lg border p-2">
-                    <div>
-                      <p className="text-sm font-medium">{debtor.debtorName}</p>
-                      <p className="text-xs text-muted-foreground">{formatCents(debtor.totalCents)}</p>
-                    </div>
-                    {debtor.whatsappUrl ? (
-                      <a href={debtor.whatsappUrl} target="_blank" rel="noreferrer">
-                        <Button variant="outline" size="sm">
-                          <ExternalLink className="size-4" />
-                          Cobrar
-                        </Button>
-                      </a>
-                    ) : (
-                      <Link href="/debtors">
-                        <Button variant="outline" size="sm">Cadastrar contato</Button>
-                      </Link>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <DebtorReceivables debtors={report.byDebtor} month={month} />
             )}
           </CardContent>
         </Card>
