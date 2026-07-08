@@ -18,6 +18,7 @@ export async function GET(
     include: {
       transactions: {
         orderBy: { date: 'asc' },
+        include: { splits: { orderBy: { debtorName: 'asc' } } },
       },
     },
   })

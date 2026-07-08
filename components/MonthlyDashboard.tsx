@@ -1,10 +1,12 @@
 'use client'
 
 import Link from 'next/link'
+import { ExternalLink, FileText, Plus, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCents, formatMonth, prevMonth, nextMonth, currentMonth } from '@/lib/format'
+import { getBudgetGroup } from '@/lib/categories'
 import { SpendingDonut } from './charts/SpendingDonut'
 import { MonthlyTrend } from './charts/MonthlyTrend'
 import { DebtorBar } from './charts/DebtorBar'
@@ -42,10 +44,10 @@ export function MonthlyDashboard({ report, month }: Props) {
         </div>
         <div className="flex gap-2">
           <Link href="/upload">
-            <Button size="sm">+ Importar</Button>
+            <Button size="sm"><Plus className="size-4" /> Importar</Button>
           </Link>
           <Link href={`/report/${month}`}>
-            <Button variant="outline" size="sm">🖨️ Relatório</Button>
+            <Button variant="outline" size="sm"><FileText className="size-4" /> Relatório</Button>
           </Link>
         </div>
       </div>
@@ -79,6 +81,34 @@ export function MonthlyDashboard({ report, month }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingUp className="size-4" /> Regra 50-30-20</CardTitle></CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-3">
+            {report.byBudgetGroup.map((item) => {
+              const diff = item.actualPercent - item.targetPercent
+              return (
+                <div key={item.group} className="rounded-lg border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm">{item.label}</span>
+                    <Badge variant={diff <= 0 ? 'outline' : 'destructive'}>
+                      {item.actualPercent}% / {item.targetPercent}%
+                    </Badge>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-primary"
+                      style={{ width: `${Math.min(item.actualPercent, 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-sm font-semibold">{formatCents(item.totalCents)}</p>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Charts grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -119,6 +149,30 @@ export function MonthlyDashboard({ report, month }: Props) {
           <CardHeader><CardTitle className="text-base">A Receber por Pessoa</CardTitle></CardHeader>
           <CardContent>
             <DebtorBar data={report.byDebtor} />
+            {report.byDebtor.length > 0 && (
+              <div className="mt-4 space-y-2">
+                {report.byDebtor.map((debtor) => (
+                  <div key={debtor.debtorName} className="flex items-center justify-between gap-3 rounded-lg border p-2">
+                    <div>
+                      <p className="text-sm font-medium">{debtor.debtorName}</p>
+                      <p className="text-xs text-muted-foreground">{formatCents(debtor.totalCents)}</p>
+                    </div>
+                    {debtor.whatsappUrl ? (
+                      <a href={debtor.whatsappUrl} target="_blank" rel="noreferrer">
+                        <Button variant="outline" size="sm">
+                          <ExternalLink className="size-4" />
+                          Cobrar
+                        </Button>
+                      </a>
+                    ) : (
+                      <Link href="/debtors">
+                        <Button variant="outline" size="sm">Cadastrar contato</Button>
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -133,7 +187,10 @@ export function MonthlyDashboard({ report, month }: Props) {
                 <div key={cat.category}>
                   <div className="flex justify-between items-center mb-1">
                     <span className="font-medium text-sm">{cat.category}</span>
-                    <span className="font-semibold text-sm">{formatCents(cat.totalCents)}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{getBudgetGroup(cat.category) === 'needs' ? '50%' : getBudgetGroup(cat.category) === 'wants' ? '30%' : '20%'}</Badge>
+                      <span className="font-semibold text-sm">{formatCents(cat.totalCents)}</span>
+                    </div>
                   </div>
                   {cat.subcategories.length > 0 && (
                     <div className="ml-4 space-y-1">

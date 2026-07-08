@@ -22,6 +22,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/upload">
                 <Button variant="ghost" size="sm">Importar</Button>
               </Link>
+              <Link href="/debtors">
+                <Button variant="ghost" size="sm">Devedores</Button>
+              </Link>
             </nav>
           </div>
           <div className="flex items-center gap-3">

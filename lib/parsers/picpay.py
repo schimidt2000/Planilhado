@@ -32,7 +32,7 @@ CHARGE_KEYWORDS = {
 }
 
 CREDIT_KEYWORDS = {
-    'PAGAMENTO', 'CREDITO', 'ESTORNO', 'DEVOLUCAO', 'REEMBOLSO',
+    'PAGAMENTO', 'ESTORNO', 'DEVOLUCAO', 'REEMBOLSO',
 }
 
 INSTALLMENT_SECTION_KEYWORDS = {
@@ -135,6 +135,10 @@ def _parse_transaction_line(line, current_section, billing_year):
         year = billing_year or '2026'
         date_str = f"{year}-{month_num}-{day}"
 
+        # Skip lines where the description contains a summary keyword (garbled rows)
+        if re.search(r'(subtotal|total\s+geral)', description_raw, re.IGNORECASE):
+            return None
+
         inst_cur, inst_tot = _parse_installment(description_raw)
         norm_desc = _normalize_description(description_raw)
         amount_cents, credit_flag = _parse_br_value(value_raw)
@@ -162,7 +166,7 @@ def _parse_transaction_line(line, current_section, billing_year):
     # ----------------------------------------------------------------
     if current_section == 'tarifas':
         m = re.match(
-            r'^(.+?)\s+([-−]?\s*R?\$?\s*[\d.,]+)$',
+            r'^(.+?)\s+([-−]?\s*R?\$?\s*[\d.]+,\d{2})$',
             line,
             re.IGNORECASE,
         )
@@ -193,7 +197,7 @@ def _parse_transaction_line(line, current_section, billing_year):
     # ----------------------------------------------------------------
     if current_section == 'operacoes':
         m = re.match(
-            r'^(.+?)\s+([-−]?\s*R?\$?\s*[\d.,]+)$',
+            r'^(.+?)\s+([-−]?\s*R?\$?\s*[\d.]+,\d{2})$',
             line,
             re.IGNORECASE,
         )
@@ -246,11 +250,7 @@ def parse(pdf_bytes, password=None):
     billing_month = None
     billing_year = None
 
-    open_kwargs = {'stream': BytesIO(pdf_bytes)}
-    if password:
-        open_kwargs['password'] = password
-
-    with pdfplumber.open(**open_kwargs) as pdf:
+    with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         # ----------------------------------------------------------------
         # Phase 1: extract billing month from all pages (usually page 1)
         # ----------------------------------------------------------------
@@ -298,10 +298,12 @@ def parse(pdf_bytes, password=None):
                     in_picpay_card_section = True
                     continue
 
-                # Skip total/summary lines
-                if re.match(r'^Total\s', stripped, re.IGNORECASE):
+                # Skip total/summary/header lines
+                if re.match(r'^(Total|Sub[\s-]?total)', stripped, re.IGNORECASE):
                     continue
-                if re.match(r'^Sub[\s-]?total', stripped, re.IGNORECASE):
+                if re.match(r'^Picpay\s+Card\s+final\b', stripped, re.IGNORECASE):
+                    continue
+                if re.match(r'^Data\s+(Opera|Estabele)', stripped, re.IGNORECASE):
                     continue
 
                 # Only parse within relevant sections
@@ -316,7 +318,7 @@ def parse(pdf_bytes, password=None):
     # Fallback: try extract_tables() if text parsing found nothing
     # ----------------------------------------------------------------
     if not transactions:
-        with pdfplumber.open(**open_kwargs) as pdf:
+        with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
             for page in pdf.pages:
                 text = page.extract_text() or ''
                 if 'Picpay' not in text and 'PicPay' not in text:

@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
+import { BUDGET_GROUPS, getBudgetGroup } from '@/lib/categories'
 import type { MonthlyReport } from '@/lib/types'
+import { buildWhatsAppUrl } from './whatsapp'
 
 export async function getMonthlyReport(userId: string, month: string): Promise<MonthlyReport | null> {
   const [year, mon] = month.split('-').map(Number)
@@ -11,20 +13,29 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   const transactions = await prisma.transaction.findMany({
     where: { userId, status: 'approved', date: { gte: start, lte: end }, isCredit: false },
     orderBy: { date: 'asc' },
+    include: { splits: true },
   })
 
-  const totalExpenseCents = transactions
-    .filter((t) => t.transactionType !== 'receivable')
-    .reduce((sum, t) => sum + t.amountCents, 0)
+  const receivableFor = (t: (typeof transactions)[number]) => {
+    const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
+    if (splitTotal > 0) return Math.min(splitTotal, t.amountCents)
+    return t.transactionType === 'receivable' ? t.amountCents : 0
+  }
 
-  const totalReceivableCents = transactions
-    .filter((t) => t.transactionType === 'receivable')
-    .reduce((sum, t) => sum + t.amountCents, 0)
+  const ownExpenseFor = (t: (typeof transactions)[number]) => {
+    if (t.transactionType === 'receivable' && t.splits.length === 0) return 0
+    return Math.max(0, t.amountCents - receivableFor(t))
+  }
+
+  const totalExpenseCents = transactions.reduce((sum, t) => sum + ownExpenseFor(t), 0)
+
+  const totalReceivableCents = transactions.reduce((sum, t) => sum + receivableFor(t), 0)
 
   const sourceMap: Record<string, number> = {}
   for (const t of transactions) {
-    if (t.transactionType === 'receivable') continue
-    sourceMap[t.sourceType] = (sourceMap[t.sourceType] || 0) + t.amountCents
+    const ownExpense = ownExpenseFor(t)
+    if (ownExpense === 0) continue
+    sourceMap[t.sourceType] = (sourceMap[t.sourceType] || 0) + ownExpense
   }
   const bySource = Object.entries(sourceMap)
     .map(([source, totalCents]) => ({ source, totalCents }))
@@ -32,12 +43,13 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
 
   const catMap: Record<string, { totalCents: number; subs: Record<string, number> }> = {}
   for (const t of transactions) {
-    if (t.transactionType === 'receivable') continue
+    const ownExpense = ownExpenseFor(t)
+    if (ownExpense === 0) continue
     const cat = t.category || 'Outros'
     if (!catMap[cat]) catMap[cat] = { totalCents: 0, subs: {} }
-    catMap[cat].totalCents += t.amountCents
+    catMap[cat].totalCents += ownExpense
     if (t.subcategory) {
-      catMap[cat].subs[t.subcategory] = (catMap[cat].subs[t.subcategory] || 0) + t.amountCents
+      catMap[cat].subs[t.subcategory] = (catMap[cat].subs[t.subcategory] || 0) + ownExpense
     }
   }
   const byCategory = Object.entries(catMap)
@@ -50,14 +62,52 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     }))
     .sort((a, b) => b.totalCents - a.totalCents)
 
+  const groupMap: Record<string, number> = {}
+  for (const t of transactions) {
+    const ownExpense = ownExpenseFor(t)
+    if (ownExpense === 0) continue
+    const group = getBudgetGroup(t.category || 'Outros')
+    groupMap[group] = (groupMap[group] || 0) + ownExpense
+  }
+
+  const byBudgetGroup = Object.entries(BUDGET_GROUPS).map(([group, meta]) => {
+    const totalCents = groupMap[group] || 0
+    return {
+      group: group as 'needs' | 'wants' | 'savings',
+      label: meta.label,
+      targetPercent: meta.targetPercent,
+      totalCents,
+      actualPercent: totalExpenseCents > 0 ? Math.round((totalCents / totalExpenseCents) * 100) : 0,
+    }
+  })
+
   const debtorMap: Record<string, number> = {}
   for (const t of transactions) {
-    if (t.transactionType === 'receivable' && t.debtorName) {
+    if (t.splits.length > 0) {
+      for (const split of t.splits) {
+        debtorMap[split.debtorName] = (debtorMap[split.debtorName] || 0) + split.amountCents
+      }
+    } else if (t.transactionType === 'receivable' && t.debtorName) {
       debtorMap[t.debtorName] = (debtorMap[t.debtorName] || 0) + t.amountCents
     }
   }
+  const debtors = await prisma.debtor.findMany({
+    where: { userId },
+    select: { name: true, whatsapp: true },
+  })
+  const debtorContacts = new Map(debtors.map((d) => [d.name.toLowerCase(), d.whatsapp]))
+
   const byDebtor = Object.entries(debtorMap)
-    .map(([debtorName, totalCents]) => ({ debtorName, totalCents }))
+    .map(([debtorName, totalCents]) => {
+      const whatsapp = debtorContacts.get(debtorName.toLowerCase()) ?? null
+      const message = `Oi, ${debtorName}! Fechando as contas aqui: ficou ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)} para me passar referente a ${month}.`
+      return {
+        debtorName,
+        totalCents,
+        whatsapp,
+        whatsappUrl: buildWhatsAppUrl(whatsapp, message),
+      }
+    })
     .sort((a, b) => b.totalCents - a.totalCents)
 
   const monthlyTrend = []
@@ -74,13 +124,20 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
         date: { gte: tStart, lte: tEnd },
         isCredit: false,
       },
-      select: { amountCents: true, transactionType: true },
+      select: { amountCents: true, transactionType: true, splits: { select: { amountCents: true } } },
     })
 
     monthlyTrend.push({
       month: mStr,
-      totalCents: mTxs.filter((t) => t.transactionType !== 'receivable').reduce((s, t) => s + t.amountCents, 0),
-      receivableCents: mTxs.filter((t) => t.transactionType === 'receivable').reduce((s, t) => s + t.amountCents, 0),
+      totalCents: mTxs.reduce((s, t) => {
+        const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
+        const receivable = splitTotal > 0 ? Math.min(splitTotal, t.amountCents) : t.transactionType === 'receivable' ? t.amountCents : 0
+        return s + Math.max(0, t.amountCents - receivable)
+      }, 0),
+      receivableCents: mTxs.reduce((s, t) => {
+        const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
+        return s + (splitTotal > 0 ? Math.min(splitTotal, t.amountCents) : t.transactionType === 'receivable' ? t.amountCents : 0)
+      }, 0),
     })
   }
 
@@ -90,6 +147,7 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     totalReceivableCents,
     bySource,
     byCategory,
+    byBudgetGroup,
     byDebtor,
     monthlyTrend,
     transactions: transactions.map((t) => ({
@@ -107,6 +165,11 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
       status: t.status,
       transactionType: t.transactionType,
       debtorName: t.debtorName,
+      splitMode: (t.splitMode as 'none' | 'equal' | 'custom') ?? 'none',
+      splits: t.splits.map((split) => ({
+        debtorName: split.debtorName,
+        amountCents: split.amountCents,
+      })),
       category: t.category,
       subcategory: t.subcategory,
       notes: t.notes,

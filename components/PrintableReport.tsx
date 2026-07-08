@@ -129,6 +129,11 @@ export function PrintableReport({ report }: Props) {
                   {t.debtorName && (
                     <span className="text-blue-600 text-xs ml-1">→ {t.debtorName}</span>
                   )}
+                  {t.splits.length > 0 && (
+                    <span className="block text-blue-600 text-xs">
+                      Rateio: {t.splits.map((split) => `${split.debtorName} ${formatCents(split.amountCents)}`).join(' · ')}
+                    </span>
+                  )}
                 </td>
                 <td className="py-1.5 pr-3 text-muted-foreground">{t.category ?? '-'}</td>
                 <td className="py-1.5 pr-3 text-muted-foreground">{SOURCE_LABELS[t.sourceType] ?? t.sourceType}</td>

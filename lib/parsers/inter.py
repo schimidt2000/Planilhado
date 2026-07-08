@@ -266,11 +266,7 @@ def parse(pdf_bytes, password=None):
     transactions = []
     billing_month = None
 
-    open_kwargs = {'stream': BytesIO(pdf_bytes)}
-    if password:
-        open_kwargs['password'] = password
-
-    with pdfplumber.open(**open_kwargs) as pdf:
+    with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         full_text = ''
         for page in pdf.pages:
             t = page.extract_text() or ''

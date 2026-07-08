@@ -72,11 +72,7 @@ def _detect_bank(pdf_bytes, password=None):
     except ImportError as exc:
         raise ImportError("pdfplumber is required: pip3 install pdfplumber") from exc
 
-    open_kwargs = {'stream': BytesIO(pdf_bytes)}
-    if password:
-        open_kwargs['password'] = password
-
-    with pdfplumber.open(**open_kwargs) as pdf:
+    with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         # Check first 3 pages (or all pages if fewer)
         pages_to_check = pdf.pages[:min(3, len(pdf.pages))]
         combined_text = ''

@@ -25,13 +25,27 @@ export async function PATCH(
       ...(body.status !== undefined && { status: body.status }),
       ...(body.transactionType !== undefined && { transactionType: body.transactionType }),
       ...(body.debtorName !== undefined && { debtorName: body.debtorName }),
+      ...(body.splitMode !== undefined && { splitMode: body.splitMode }),
       ...(body.category !== undefined && { category: body.category }),
       ...(body.subcategory !== undefined && { subcategory: body.subcategory }),
       ...(body.notes !== undefined && { notes: body.notes }),
       ...(body.isEssential !== undefined && { isEssential: body.isEssential }),
       ...(body.installmentCurrent !== undefined && { installmentCurrent: body.installmentCurrent }),
       ...(body.installmentTotal !== undefined && { installmentTotal: body.installmentTotal }),
+      ...(body.splits !== undefined && {
+        splits: {
+          deleteMany: {},
+          create: body.splits
+            .filter((split) => split.debtorName.trim() && split.amountCents > 0)
+            .map((split) => ({
+              userId,
+              debtorName: split.debtorName.trim(),
+              amountCents: split.amountCents,
+            })),
+        },
+      }),
     },
+    include: { splits: true },
   })
 
   return ok(updated)

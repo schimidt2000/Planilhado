@@ -80,11 +80,7 @@ def parse(pdf_bytes, password=None):
     month_ref = None
     year_ref = None
 
-    open_kwargs = {'stream': BytesIO(pdf_bytes)}
-    if password:
-        open_kwargs['password'] = password
-
-    with pdfplumber.open(**open_kwargs) as pdf:
+    with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         for page in pdf.pages:
             text = page.extract_text()
             if not text:

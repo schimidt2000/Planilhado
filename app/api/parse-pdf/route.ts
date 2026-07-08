@@ -17,13 +17,14 @@ export async function POST(req: NextRequest) {
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
 
-  const result = await parsePDF(buffer, pdfPassword || undefined).catch((err: Error) => {
-    const msg = err.message
+  try {
+    const result = await parsePDF(buffer, pdfPassword || undefined)
+    return ok(result)
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('senha') || msg.includes('password') || msg.includes('incorrect')) {
-      throw { status: 400, message: 'Senha incorreta para o PDF' }
+      return error('Senha incorreta para o PDF. Por favor, informe a senha.', 400)
     }
-    throw { status: 400, message: msg }
-  })
-
-  return ok(result)
+    return error(msg || 'Erro ao processar PDF', 400)
+  }
 }

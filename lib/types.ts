@@ -2,6 +2,16 @@ export type ImportSource = 'nubank' | 'inter' | 'picpay' | 'pix'
 export type InputType = 'fatura' | 'extrato'
 export type TransactionStatus = 'pending' | 'approved' | 'rejected'
 export type TransactionType = 'expense' | 'receivable'
+export type BudgetGroup = 'needs' | 'wants' | 'savings'
+export type SplitMode = 'none' | 'equal' | 'custom'
+
+export interface Debtor {
+  id: string
+  name: string
+  whatsapp?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
 
 export interface ParsedTransaction {
   date: string
@@ -26,12 +36,19 @@ export interface TransactionReview {
   status?: TransactionStatus
   transactionType?: TransactionType | null
   debtorName?: string | null
+  splitMode?: SplitMode
+  splits?: TransactionSplitInput[]
   category?: string | null
   subcategory?: string | null
   notes?: string | null
   isEssential?: boolean | null
   installmentCurrent?: number | null
   installmentTotal?: number | null
+}
+
+export interface TransactionSplitInput {
+  debtorName: string
+  amountCents: number
 }
 
 export interface SuggestionResult {
@@ -48,7 +65,8 @@ export interface MonthlyReport {
   totalReceivableCents: number
   bySource: { source: string; totalCents: number }[]
   byCategory: { category: string; totalCents: number; subcategories: { subcategory: string; totalCents: number }[] }[]
-  byDebtor: { debtorName: string; totalCents: number }[]
+  byBudgetGroup: { group: BudgetGroup; label: string; targetPercent: number; totalCents: number; actualPercent: number }[]
+  byDebtor: { debtorName: string; totalCents: number; whatsapp?: string | null; whatsappUrl?: string | null }[]
   monthlyTrend: { month: string; totalCents: number; receivableCents: number }[]
   transactions: TransactionWithMeta[]
 }
@@ -68,6 +86,8 @@ export interface TransactionWithMeta {
   status: string
   transactionType?: string | null
   debtorName?: string | null
+  splitMode: SplitMode
+  splits: TransactionSplitInput[]
   category?: string | null
   subcategory?: string | null
   notes?: string | null

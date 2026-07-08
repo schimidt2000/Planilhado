@@ -38,12 +38,25 @@ export async function POST(req: NextRequest) {
           ...(fields.status !== undefined && { status: fields.status }),
           ...(fields.transactionType !== undefined && { transactionType: fields.transactionType }),
           ...(fields.debtorName !== undefined && { debtorName: fields.debtorName }),
+          ...(fields.splitMode !== undefined && { splitMode: fields.splitMode }),
           ...(fields.category !== undefined && { category: fields.category }),
           ...(fields.subcategory !== undefined && { subcategory: fields.subcategory }),
           ...(fields.notes !== undefined && { notes: fields.notes }),
           ...(fields.isEssential !== undefined && { isEssential: fields.isEssential }),
           ...(fields.installmentCurrent !== undefined && { installmentCurrent: fields.installmentCurrent }),
           ...(fields.installmentTotal !== undefined && { installmentTotal: fields.installmentTotal }),
+          ...(fields.splits !== undefined && {
+            splits: {
+              deleteMany: {},
+              create: fields.splits
+                .filter((split) => split.debtorName.trim() && split.amountCents > 0)
+                .map((split) => ({
+                  userId,
+                  debtorName: split.debtorName.trim(),
+                  amountCents: split.amountCents,
+                })),
+            },
+          }),
         },
       })
     })

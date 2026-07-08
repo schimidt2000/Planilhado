@@ -14,6 +14,20 @@ model User {
   createdAt    DateTime        @default(now())
   sessions     ImportSession[]
   transactions Transaction[]
+  debtors      Debtor[]
+}
+
+model Debtor {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  whatsapp  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
 }
 
 model ImportSession {
@@ -28,17 +42,17 @@ model ImportSession {
 }
 
 model Transaction {
-  id                  String        @id @default(cuid())
-  importSessionId     String
-  importSession       ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
-  userId              String
-  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String        @id @default(cuid())
+  importSessionId String
+  importSession   ImportSession @relation(fields: [importSessionId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   date                DateTime
   description         String
   amountCents         Int
-  isCredit            Boolean       @default(false)
-  isCharge            Boolean       @default(false)
+  isCredit            Boolean  @default(false)
+  isCharge            Boolean  @default(false)
   installmentCurrent  Int?
   installmentTotal    Int?
   currencyOriginal    String?
@@ -46,18 +60,34 @@ model Transaction {
   sourceType          String
   rawLine             String?
 
-  status              String        @default("pending")
-  transactionType     String?
-  debtorName          String?
-  category            String?
-  subcategory         String?
-  notes               String?
-  isEssential         Boolean?
+  status          String             @default("pending")
+  transactionType String?
+  debtorName      String?
+  splitMode       String             @default("none")
+  category        String?
+  subcategory     String?
+  notes           String?
+  isEssential     Boolean?
+  splits          TransactionSplit[]
 
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId, importSessionId])
   @@index([userId, date])
   @@index([userId, status, description])
+}
+
+model TransactionSplit {
+  id            String      @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  userId        String
+  debtorName    String
+  amountCents   Int
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId, debtorName])
+  @@index([transactionId])
 }
