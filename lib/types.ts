@@ -1,5 +1,5 @@
-export type ImportSource = 'nubank' | 'inter' | 'picpay' | 'pix'
-export type InputType = 'fatura' | 'extrato'
+export type ImportSource = 'nubank' | 'inter' | 'picpay' | 'pix' | 'manual'
+export type InputType = 'fatura' | 'extrato' | 'manual'
 export type TransactionStatus = 'pending' | 'approved' | 'rejected'
 export type TransactionType = 'expense' | 'receivable'
 export type BudgetGroup = 'needs' | 'wants' | 'savings'
@@ -24,6 +24,7 @@ export interface ParsedTransaction {
   currencyOriginal?: string | null
   amountOriginalCents?: number | null
   rawLine?: string | null
+  externalIdentifier?: string | null
 }
 
 export interface ParseResult {
@@ -93,4 +94,15 @@ export interface TransactionWithMeta {
   notes?: string | null
   isEssential?: boolean | null
   importSessionId: string
+  origin?: string
+  reconciledAt?: string | null
+}
+
+export type ReconciliationAction = 'new' | 'complete' | 'duplicate'
+
+export interface ImportPreviewItem extends ParsedTransaction {
+  key: string
+  action: ReconciliationAction
+  matchedTransactionId?: string
+  matchedDescription?: string
 }

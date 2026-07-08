@@ -59,6 +59,9 @@ model Transaction {
   amountOriginalCents Int?
   sourceType          String
   rawLine             String?
+  externalIdentifier  String?
+  origin              String        @default("imported")
+  reconciledAt        DateTime?
 
   status          String             @default("pending")
   transactionType String?
@@ -76,6 +79,7 @@ model Transaction {
   @@index([userId, importSessionId])
   @@index([userId, date])
   @@index([userId, status, description])
+  @@unique([userId, sourceType, externalIdentifier])
 }
 
 model TransactionSplit {

@@ -2,7 +2,7 @@ import { auth, signOut } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { FileText, LayoutDashboard, Upload, Users } from 'lucide-react'
+import { CirclePlus, FileText, LayoutDashboard, Upload, Users } from 'lucide-react'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -34,6 +34,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Link>
             <Link href="/upload">
               <Button variant="ghost" size="sm"><Upload className="size-4" /> Importar</Button>
+            </Link>
+            <Link href="/manual">
+              <Button variant="ghost" size="sm"><CirclePlus className="size-4" /> Novo gasto</Button>
             </Link>
             <Link href="/imports">
               <Button variant="ghost" size="sm"><FileText className="size-4" /> Importações</Button>

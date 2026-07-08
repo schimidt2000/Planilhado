@@ -2,36 +2,44 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CheckCircle2, FileCheck2, FilePlus2, Link2, RotateCcw, Upload } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { formatCents } from '@/lib/format'
 import { toast } from 'sonner'
+import type { ImportPreviewItem, ImportSource, InputType, ParseResult } from '@/lib/types'
 
-type UploadState = 'idle' | 'parsing' | 'done' | 'error'
-type InputType = 'fatura' | 'extrato'
+type UploadState = 'idle' | 'parsing' | 'preview' | 'saving'
 
 interface QueuedFile {
   id: string
   file: File
   password: string
   needsPassword: boolean
-  inputType: InputType
+  inputType: Exclude<InputType, 'manual'>
+}
+
+interface PreparedFile {
+  input: QueuedFile
+  source: ImportSource
+  month: string
+  preview: ImportPreviewItem[]
 }
 
 export default function UploadPage() {
   const router = useRouter()
-
   const [files, setFiles] = useState<QueuedFile[]>([])
+  const [prepared, setPrepared] = useState<PreparedFile[]>([])
   const [state, setState] = useState<UploadState>('idle')
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
 
-  function addFiles(inputType: InputType, selected: FileList | null) {
+  function addFiles(inputType: Exclude<InputType, 'manual'>, selected: FileList | null) {
     if (!selected?.length) return
-
     const nextFiles = Array.from(selected).map((file) => ({
       id: `${inputType}-${file.name}-${file.size}-${file.lastModified}`,
       file,
@@ -39,7 +47,6 @@ export default function UploadPage() {
       needsPassword: false,
       inputType,
     }))
-
     setFiles((current) => {
       const known = new Set(current.map((item) => item.id))
       return [...current, ...nextFiles.filter((item) => !known.has(item.id))]
@@ -50,185 +57,189 @@ export default function UploadPage() {
     setFiles((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item))
   }
 
-  function removeFile(id: string) {
-    setFiles((current) => current.filter((item) => item.id !== id))
-  }
-
-  async function processPDF(input: QueuedFile): Promise<{ sessionId: string } | null> {
+  async function prepareFile(input: QueuedFile): Promise<PreparedFile> {
     const formData = new FormData()
     formData.append('file', input.file)
     formData.append('inputType', input.inputType)
     if (input.password) formData.append('pdfPassword', input.password)
-
-    const parseRes = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
-    if (!parseRes.ok) {
-      const data = await parseRes.json()
-      if (data.error?.toLowerCase().includes('senha') || parseRes.status === 400) {
-        throw Object.assign(new Error(data.error), { needsPassword: true, fileId: input.id })
-      }
-      throw new Error(data.error || 'Erro ao processar PDF')
+    const parseResponse = await fetch('/api/parse-file', { method: 'POST', body: formData })
+    const parseData = await parseResponse.json()
+    if (!parseResponse.ok) {
+      throw Object.assign(new Error(parseData.error || 'Erro ao ler arquivo'), {
+        needsPassword: /senha/i.test(parseData.error || ''),
+        fileId: input.id,
+      })
     }
 
-    const parseData = await parseRes.json()
-
-    const sessionRes = await fetch('/api/import-sessions', {
+    const result = parseData as ParseResult
+    const previewResponse = await fetch('/api/import-sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        month: parseData.month,
-        source: parseData.source,
-        inputType: input.inputType,
-        transactions: parseData.transactions,
-      }),
+      body: JSON.stringify({ ...result, inputType: input.inputType, previewOnly: true }),
     })
-
-    if (!sessionRes.ok) {
-      const data = await sessionRes.json()
-      if (sessionRes.status === 409) {
-        toast.warning(`${input.file.name}: ${data.error}`, { duration: 5000 })
-        return null
-      }
-      throw new Error(data.error || 'Erro ao salvar sessão')
-    }
-
-    return sessionRes.json()
+    const previewData = await previewResponse.json()
+    if (!previewResponse.ok) throw new Error(previewData.error || 'Erro ao comparar lançamentos')
+    return { input, source: result.source, month: result.month, preview: previewData.preview }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!files.length) {
-      toast.error('Selecione pelo menos um arquivo PDF')
-      return
-    }
-
+  async function analyze(event: React.FormEvent) {
+    event.preventDefault()
+    if (files.length === 0) return toast.error('Selecione pelo menos um arquivo PDF ou CSV')
     setState('parsing')
     setProgress(5)
-
     try {
-      const results: string[] = []
-
+      const results: PreparedFile[] = []
       for (const [index, file] of files.entries()) {
-        setStatus(`Processando ${file.file.name}...`)
+        setStatus(`Analisando ${file.file.name}...`)
         setProgress(Math.round((index / files.length) * 90) + 5)
-        const result = await processPDF(file)
-        if (result) results.push(result.sessionId)
+        results.push(await prepareFile(file))
       }
-
-      setState('done')
+      setPrepared(results)
       setProgress(100)
-
-      if (results.length > 0) {
-        toast.success('PDFs processados! Revise as transações.')
-        router.push(`/review?sessionIds=${results.join(',')}`)
-      } else {
-        toast.info('Nenhuma nova sessão criada')
-        router.push('/dashboard')
-      }
-    } catch (err: unknown) {
-      setState('error')
-      const error = err as Error & { needsPassword?: boolean; fileId?: string }
-      if (error.needsPassword && error.fileId) {
-        updateFile(error.fileId, { needsPassword: true })
-        toast.error('Um PDF está protegido por senha. Informe a senha e tente de novo.')
-        setState('idle')
-      } else {
-        toast.error(error.message || 'Erro inesperado')
-      }
+      setState('preview')
+    } catch (unknownError) {
+      const error = unknownError as Error & { needsPassword?: boolean; fileId?: string }
+      if (error.needsPassword && error.fileId) updateFile(error.fileId, { needsPassword: true })
+      toast.error(error.message || 'Erro inesperado')
+      setState('idle')
     }
   }
 
-  const isLoading = state === 'parsing'
+  async function confirmImport() {
+    setState('saving')
+    try {
+      const sessionIds: string[] = []
+      let completed = 0
+      let imported = 0
+      for (const file of prepared) {
+        setStatus(`Importando ${file.input.file.name}...`)
+        const response = await fetch('/api/import-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            month: file.month,
+            source: file.source,
+            inputType: file.input.inputType,
+            transactions: file.preview,
+          }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Erro ao importar')
+        if (data.imported > 0) sessionIds.push(data.sessionId)
+        completed += data.completed
+        imported += data.imported
+      }
+      toast.success(`${imported} novo(s) e ${completed} lançamento(s) completado(s)`)
+      if (sessionIds.length > 0) router.push(`/review?sessionIds=${sessionIds.join(',')}`)
+      else router.push(`/dashboard?m=${prepared[0]?.month}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao importar')
+      setState('preview')
+    }
+  }
 
-  return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Importar arquivos</h1>
-        <p className="text-muted-foreground mt-1">
-          Selecione uma ou mais faturas/extratos. Todos os gastos entram em uma revisão única.
-        </p>
-      </div>
+  const allItems = prepared.flatMap((file) => file.preview)
+  const counts = {
+    new: allItems.filter((item) => item.action === 'new').length,
+    complete: allItems.filter((item) => item.action === 'complete').length,
+    duplicate: allItems.filter((item) => item.action === 'duplicate').length,
+  }
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Faturas do cartão</CardTitle>
-              <CardDescription>Nubank, Inter ou PicPay</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Input
-                type="file"
-                accept=".pdf"
-                multiple
-                className="cursor-pointer"
-                onChange={(e) => addFiles('fatura', e.target.files)}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Extratos bancários</CardTitle>
-              <CardDescription>Conta corrente / Pix</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Input
-                type="file"
-                accept=".pdf"
-                multiple
-                className="cursor-pointer"
-                onChange={(e) => addFiles('extrato', e.target.files)}
-              />
-            </CardContent>
-          </Card>
+  if (state === 'preview' || state === 'saving') {
+    return (
+      <div className="mx-auto max-w-5xl space-y-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Conferir importação</h1>
+            <p className="mt-1 text-muted-foreground">Veja o que será criado e o que será completado antes de continuar.</p>
+          </div>
+          <Button variant="outline" onClick={() => { setPrepared([]); setState('idle') }} disabled={state === 'saving'}>
+            <RotateCcw className="size-4" /> Trocar arquivos
+          </Button>
         </div>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Arquivos selecionados</CardTitle>
-            <CardDescription>{files.length} arquivo(s) na fila</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {files.length === 0 && (
-              <p className="text-sm text-muted-foreground">Nenhum arquivo selecionado.</p>
-            )}
-            {files.map((item) => (
-              <div key={item.id} className="rounded-lg border p-3 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{item.file.name}</p>
-                    <Badge variant="outline" className="mt-1">{item.inputType}</Badge>
-                  </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => removeFile(item.id)}>
-                    Remover
-                  </Button>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Card><CardContent className="flex items-center gap-3 p-4"><FilePlus2 className="size-5 text-blue-600" /><div><p className="text-2xl font-bold">{counts.new}</p><p className="text-xs text-muted-foreground">Novos lançamentos</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><Link2 className="size-5 text-green-600" /><div><p className="text-2xl font-bold">{counts.complete}</p><p className="text-xs text-muted-foreground">Manuais completados</p></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-3 p-4"><FileCheck2 className="size-5 text-zinc-500" /><div><p className="text-2xl font-bold">{counts.duplicate}</p><p className="text-xs text-muted-foreground">Já importados</p></div></CardContent></Card>
+        </div>
+
+        <div className="space-y-4">
+          {prepared.map((file) => (
+            <Card key={file.input.id}>
+              <CardHeader className="pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div><CardTitle className="text-base">{file.input.file.name}</CardTitle><CardDescription>{file.month} · {file.preview.length} movimentações</CardDescription></div>
+                  <Badge variant="outline">{file.source}</Badge>
                 </div>
-                {item.needsPassword && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Senha do PDF</Label>
-                    <Input
-                      type="password"
-                      placeholder="Digite a senha do PDF"
-                      value={item.password}
-                      onChange={(e) => updateFile(item.id, { password: e.target.value })}
-                    />
+              </CardHeader>
+              <CardContent className="divide-y p-0">
+                {file.preview.map((item) => (
+                  <div key={item.key} className="grid gap-2 px-5 py-3 sm:grid-cols-[110px_1fr_auto_auto] sm:items-center">
+                    <span className="text-xs text-muted-foreground">{new Date(item.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.description}</p>
+                      {item.action === 'complete' && <p className="truncate text-xs text-muted-foreground">Completa: {item.matchedDescription}</p>}
+                    </div>
+                    <span className={item.isCredit ? 'text-sm font-semibold text-green-600' : 'text-sm font-semibold'}>{item.isCredit ? '+' : ''}{formatCents(item.amountCents)}</span>
+                    <Badge variant="outline" className={
+                      item.action === 'new' ? 'border-blue-200 bg-blue-50 text-blue-700' :
+                      item.action === 'complete' ? 'border-green-200 bg-green-50 text-green-700' :
+                      'text-muted-foreground'
+                    }>
+                      {item.action === 'new' ? 'Novo' : item.action === 'complete' ? 'Completar' : 'Já existe'}
+                    </Badge>
                   </div>
-                )}
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="sticky bottom-4 flex justify-end border bg-background p-3 shadow-lg">
+          <Button size="lg" onClick={confirmImport} disabled={state === 'saving'}>
+            <CheckCircle2 className="size-4" /> {state === 'saving' ? 'Importando...' : `Confirmar ${counts.new + counts.complete} alterações`}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Importar arquivos</h1>
+        <p className="mt-1 text-muted-foreground">Envie PDFs ou CSVs. Antes de salvar, você verá novos gastos, conciliações e duplicidades.</p>
+      </div>
+      <form onSubmit={analyze} className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          {([
+            ['fatura', 'Faturas do cartão', 'Nubank, Inter ou PicPay'],
+            ['extrato', 'Extratos bancários', 'Conta corrente / Pix'],
+          ] as const).map(([inputType, title, description]) => (
+            <Card key={inputType}>
+              <CardHeader className="pb-3"><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+              <CardContent><Input type="file" accept=".pdf,.csv,text/csv" multiple className="cursor-pointer" onChange={(event) => addFiles(inputType, event.target.files)} /></CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Arquivos selecionados</CardTitle><CardDescription>{files.length} arquivo(s) na fila</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {files.length === 0 && <p className="text-sm text-muted-foreground">Nenhum arquivo selecionado.</p>}
+            {files.map((item) => (
+              <div key={item.id} className="space-y-2 border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0"><p className="truncate text-sm font-medium">{item.file.name}</p><Badge variant="outline" className="mt-1">{item.inputType}</Badge></div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setFiles((current) => current.filter((file) => file.id !== item.id))}>Remover</Button>
+                </div>
+                {item.needsPassword && <div className="space-y-1"><Label className="text-xs">Senha do PDF</Label><Input type="password" value={item.password} onChange={(event) => updateFile(item.id, { password: event.target.value })} /></div>}
               </div>
             ))}
           </CardContent>
         </Card>
-
-        {isLoading && (
-          <div className="space-y-2">
-            <Progress value={progress} />
-            <p className="text-sm text-muted-foreground text-center">{status}</p>
-          </div>
-        )}
-
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? 'Processando...' : 'Processar arquivos'}
-        </Button>
+        {state === 'parsing' && <div className="space-y-2"><Progress value={progress} /><p className="text-center text-sm text-muted-foreground">{status}</p></div>}
+        <Button type="submit" className="w-full" disabled={state === 'parsing'}><Upload className="size-4" /> {state === 'parsing' ? 'Analisando...' : 'Analisar arquivos'}</Button>
       </form>
     </div>
   )

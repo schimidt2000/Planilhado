@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { Check, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +15,7 @@ import type { Debtor, SplitMode, TransactionSplitInput, TransactionWithMeta, Sug
 interface Props {
   transaction: TransactionWithMeta
   onChange: (id: string, patch: Partial<TransactionWithMeta>) => void
+  onDecide: (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => Promise<void>
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -23,7 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
   pix: 'Pix',
 }
 
-export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
+export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [suggestion, setSuggestion] = useState<SuggestionResult | null>(null)
   const [suggestionLoading, setSuggestionLoading] = useState(false)
@@ -41,7 +43,7 @@ export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
       setSuggestion(data.confidence !== 'low' ? data : null)
     }
     setSuggestionLoading(false)
-  }, [tx.description, tx.installmentTotal, tx.installmentCurrent, suggestionLoading])
+  }, [tx.description, tx.installmentTotal, tx.installmentCurrent])
 
   useEffect(() => {
     if (expanded && !suggestion && !suggestionLoading) {
@@ -110,14 +112,8 @@ export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
 
   const splitTotal = (tx.splits ?? []).reduce((sum, split) => sum + split.amountCents, 0)
 
-  const statusBadge = {
-    pending: { label: 'Pendente', cls: 'bg-yellow-100 text-yellow-800' },
-    approved: { label: 'Aprovado', cls: 'bg-green-100 text-green-800' },
-    rejected: { label: 'Rejeitado', cls: 'bg-red-100 text-red-800' },
-  }[tx.status] ?? { label: tx.status, cls: '' }
-
   return (
-    <Card className={`transition-all ${tx.status === 'rejected' ? 'opacity-50' : ''} ${tx.isCharge ? 'border-amber-200' : ''}`}>
+    <Card className={`transition-all ${tx.isCharge ? 'border-amber-200' : ''}`}>
       <CardContent className="p-4">
         {/* Header row */}
         <div className="flex items-start gap-3">
@@ -128,7 +124,7 @@ export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
               {tx.installmentCurrent && tx.installmentTotal && (
                 <Badge variant="outline" className="text-xs">{tx.installmentCurrent}/{tx.installmentTotal}</Badge>
               )}
-              <Badge className={`text-xs ${statusBadge.cls}`} variant="outline">{statusBadge.label}</Badge>
+              <Badge className="bg-yellow-50 text-xs text-yellow-800" variant="outline">Pendente</Badge>
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
               <span>{new Date(tx.date).toLocaleDateString('pt-BR')}</span>
@@ -143,26 +139,9 @@ export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
             <span className={`font-bold text-sm ${tx.isCredit ? 'text-green-600' : ''}`}>
               {tx.isCredit ? '-' : ''}{formatCents(tx.amountCents)}
             </span>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant={tx.status === 'approved' ? 'default' : 'outline'}
-                className="h-7 text-xs px-2"
-                onClick={() => { onChange(tx.id, { status: 'approved' }); setExpanded(true) }}
-              >✓</Button>
-              <Button
-                size="sm"
-                variant={tx.status === 'rejected' ? 'destructive' : 'outline'}
-                className="h-7 text-xs px-2"
-                onClick={() => onChange(tx.id, { status: 'rejected' })}
-              >✕</Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs px-2"
-                onClick={() => setExpanded((v) => !v)}
-              >{expanded ? '▲' : '▼'}</Button>
-            </div>
+            <Button size="icon-sm" variant="ghost" title={expanded ? 'Recolher detalhes' : 'Revisar gasto'} onClick={() => setExpanded((value) => !value)}>
+              {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            </Button>
           </div>
         </div>
 
@@ -344,6 +323,15 @@ export function TransactionReviewCard({ transaction: tx, onChange }: Props) {
                 </div>
               </div>
             )}
+
+            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => onDecide(tx, 'rejected')}>
+                <X className="size-4" /> Recusar gasto
+              </Button>
+              <Button type="button" onClick={() => onDecide(tx, 'approved')}>
+                <Check className="size-4" /> Aprovar gasto
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>
