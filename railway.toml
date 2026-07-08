@@ -11,10 +11,9 @@ pkgs = ["nodejs_20", "python312", "python312Packages.pip"]
 cmds = ["pip install pdfplumber"]
 
 [deploy]
-startCommand = "npx prisma migrate deploy && npx next start -p 3000"
+preDeployCommand = ["npx prisma migrate deploy"]
+startCommand = "npx next start --hostname 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[deploy.healthcheck]
-path = "/api/auth/session"
-timeout = 30

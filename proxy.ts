@@ -7,14 +7,15 @@ export const proxy = auth((req) => {
 
   const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/register')
   const isApiAuthRoute = pathname.startsWith('/api/auth')
-  const isProtectedApi = pathname.startsWith('/api/') && !isApiAuthRoute
+  const isHealthRoute = pathname === '/api/health'
+  const isProtectedApi = pathname.startsWith('/api/') && !isApiAuthRoute && !isHealthRoute
   const isProtectedPage =
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/upload') ||
     pathname.startsWith('/review') ||
     pathname.startsWith('/report')
 
-  if (isApiAuthRoute) return NextResponse.next()
+  if (isApiAuthRoute || isHealthRoute) return NextResponse.next()
 
   if (isProtectedApi && !isAuthenticated) {
     return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
