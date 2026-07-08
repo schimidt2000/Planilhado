@@ -12,6 +12,13 @@ import { CATEGORY_NAMES, getSubcategories } from '@/lib/categories'
 import type { Debtor, SplitMode, TransactionSplitInput } from '@/lib/types'
 
 const today = new Date().toISOString().slice(0, 10)
+const SOURCE_NAMES: Record<string, string> = {
+  pix: 'Pix / conta',
+  nubank: 'Nubank',
+  inter: 'Inter',
+  picpay: 'PicPay',
+  manual: 'Dinheiro / outro',
+}
 
 export function ManualTransactionForm() {
   const router = useRouter()
@@ -96,7 +103,7 @@ export function ManualTransactionForm() {
         <div className="space-y-1.5">
           <Label>Fonte provável</Label>
           <Select value={form.sourceType} onValueChange={(sourceType) => patch({ sourceType: sourceType || 'manual' })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger><SelectValue>{SOURCE_NAMES[form.sourceType]}</SelectValue></SelectTrigger>
             <SelectContent>
               <SelectItem value="pix">Pix / conta</SelectItem>
               <SelectItem value="nubank">Nubank</SelectItem>
@@ -109,7 +116,7 @@ export function ManualTransactionForm() {
         <div className="space-y-1.5">
           <Label>Categoria</Label>
           <Select value={form.category} onValueChange={(category) => patch({ category: category || '', subcategory: '' })}>
-            <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Selecione">{form.category || undefined}</SelectValue></SelectTrigger>
             <SelectContent>{CATEGORY_NAMES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
           </Select>
         </div>
@@ -117,7 +124,7 @@ export function ManualTransactionForm() {
           <div className="space-y-1.5">
             <Label>Subcategoria</Label>
             <Select value={form.subcategory} onValueChange={(subcategory) => patch({ subcategory: subcategory || '' })}>
-              <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Selecione">{form.subcategory || undefined}</SelectValue></SelectTrigger>
               <SelectContent>{getSubcategories(form.category).map((subcategory) => <SelectItem key={subcategory} value={subcategory}>{subcategory}</SelectItem>)}</SelectContent>
             </Select>
           </div>
@@ -131,7 +138,9 @@ export function ManualTransactionForm() {
               splitMode: transactionType === 'receivable' ? 'none' : form.splitMode,
             })}
           >
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger>
+              <SelectValue>{form.transactionType === 'receivable' ? 'A receber' : 'Gasto próprio'}</SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="expense">Gasto próprio</SelectItem>
               <SelectItem value="receivable">A receber</SelectItem>
@@ -147,7 +156,11 @@ export function ManualTransactionForm() {
           <div className="space-y-1.5">
             <Label>Rateio</Label>
             <Select value={form.splitMode} onValueChange={(value) => setSplitMode((value || 'none') as SplitMode)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue>
+                  {form.splitMode === 'equal' ? 'Dividir igualmente' : form.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Sem rateio</SelectItem>
                 <SelectItem value="equal">Dividir igualmente</SelectItem>

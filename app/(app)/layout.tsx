@@ -2,7 +2,8 @@ import { auth, signOut } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { CirclePlus, FileText, LayoutDashboard, Upload, Users } from 'lucide-react'
+import { LogOut } from 'lucide-react'
+import { AppNavigation } from '@/components/AppNavigation'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -10,55 +11,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b bg-background sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-4">
-            <Link href="/dashboard" className="font-bold text-lg text-primary">
-              Planilhado
-            </Link>
-            <div className="flex items-center gap-3 sm:hidden">
-              <span className="text-sm text-muted-foreground">
-                {session.user.name}
-              </span>
-              <form action={async () => {
-                'use server'
-                await signOut({ redirectTo: '/login' })
-              }}>
-                <Button variant="outline" size="sm" type="submit">Sair</Button>
-              </form>
-            </div>
-          </div>
-          <nav className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="sm"><LayoutDashboard className="size-4" /> Dashboard</Button>
-            </Link>
-            <Link href="/upload">
-              <Button variant="ghost" size="sm"><Upload className="size-4" /> Importar</Button>
-            </Link>
-            <Link href="/manual">
-              <Button variant="ghost" size="sm"><CirclePlus className="size-4" /> Novo gasto</Button>
-            </Link>
-            <Link href="/imports">
-              <Button variant="ghost" size="sm"><FileText className="size-4" /> Importações</Button>
-            </Link>
-            <Link href="/debtors">
-              <Button variant="ghost" size="sm"><Users className="size-4" /> Devedores</Button>
-            </Link>
-          </nav>
-          <div className="hidden items-center gap-3 sm:flex">
-            <span className="text-sm text-muted-foreground">
+      <header className="sticky top-0 z-40 border-b bg-background">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
+          <Link href="/dashboard" className="text-lg font-bold text-primary">Planilhado</Link>
+          <AppNavigation />
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="hidden max-w-48 truncate text-sm text-muted-foreground lg:block">
               {session.user.name}
             </span>
             <form action={async () => {
               'use server'
               await signOut({ redirectTo: '/login' })
             }}>
-              <Button variant="outline" size="sm" type="submit">Sair</Button>
+              <Button variant="outline" size="icon" type="submit" title="Sair" className="lg:hidden">
+                <LogOut className="size-4" />
+              </Button>
+              <Button variant="outline" size="sm" type="submit" className="hidden lg:inline-flex">
+                <LogOut className="size-4" /> Sair
+              </Button>
             </form>
           </div>
         </div>
       </header>
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5 pb-24 sm:py-6 lg:pb-6">
         {children}
       </main>
     </div>

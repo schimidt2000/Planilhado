@@ -116,7 +116,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
     <Card className={`transition-all ${tx.isCharge ? 'border-amber-200' : ''}`}>
       <CardContent className="p-4">
         {/* Header row */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-2 sm:gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm truncate">{tx.description}</span>
@@ -136,7 +136,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               {tx.debtorName && <><span>·</span><span className="text-blue-600">→ {tx.debtorName}</span></>}
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
             <span className={`font-bold text-sm ${tx.isCredit ? 'text-green-600' : ''}`}>
               {tx.isCredit ? '-' : ''}{formatCents(tx.amountCents)}
             </span>
@@ -163,7 +163,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label className="text-xs">Tipo</Label>
                 <Select
@@ -178,7 +178,9 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                   }}
                 >
                   <SelectTrigger className="h-8 text-xs mt-1">
-                    <SelectValue placeholder="Selecione..." />
+                    <SelectValue placeholder="Selecione...">
+                      {tx.transactionType === 'receivable' ? 'A receber de alguém' : tx.transactionType === 'expense' ? 'Gasto próprio' : undefined}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="expense">Gasto próprio</SelectItem>
@@ -213,7 +215,9 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                     onValueChange={(v) => setSplitMode(v as SplitMode)}
                   >
                     <SelectTrigger className="h-8 text-xs mt-1">
-                      <SelectValue placeholder="Rateio..." />
+                      <SelectValue placeholder="Rateio...">
+                        {tx.splitMode === 'equal' ? 'Dividir igualmente' : tx.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Sem rateio</SelectItem>
@@ -231,7 +235,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                   onValueChange={(v) => onChange(tx.id, { category: v || null, subcategory: null })}
                 >
                   <SelectTrigger className="h-8 text-xs mt-1">
-                    <SelectValue placeholder="Categoria..." />
+                    <SelectValue placeholder="Categoria...">{tx.category || undefined}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {CATEGORY_NAMES.map((c) => (
@@ -249,7 +253,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                     onValueChange={(v) => onChange(tx.id, { subcategory: v || null })}
                   >
                     <SelectTrigger className="h-8 text-xs mt-1">
-                      <SelectValue placeholder="Subcategoria..." />
+                      <SelectValue placeholder="Subcategoria...">{tx.subcategory || undefined}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {getSubcategories(tx.category).map((s) => (
@@ -260,7 +264,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                 </div>
               )}
 
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <Label className="text-xs">Observações</Label>
                 <Input
                   className="h-8 text-xs mt-1"
@@ -325,7 +329,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               </div>
             )}
 
-            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+            <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => onDecide(tx, 'rejected')}>
                 <X className="size-4" /> Recusar gasto
               </Button>

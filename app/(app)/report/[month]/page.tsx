@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { PrintableReport } from '@/components/PrintableReport'
 import Link from 'next/link'
+import { Printer } from 'lucide-react'
 import type { MonthlyReport } from '@/lib/types'
 
 export default function ReportPage({ params }: { params: Promise<{ month: string }> }) {
@@ -24,11 +25,11 @@ export default function ReportPage({ params }: { params: Promise<{ month: string
   return (
     <div>
       {/* Toolbar — hidden on print */}
-      <div className="print:hidden mb-6 flex justify-between items-center border-b pb-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2 border-b pb-4 print:hidden">
         <Link href={`/dashboard?m=${month}`}>
           <Button variant="outline" size="sm">← Voltar</Button>
         </Link>
-        <Button onClick={() => window.print()}>🖨️ Imprimir / Salvar PDF</Button>
+        <Button onClick={() => window.print()}><Printer className="size-4" /> Imprimir / Salvar PDF</Button>
       </div>
 
       <PrintableReport report={report} />

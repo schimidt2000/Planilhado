@@ -31,12 +31,12 @@ export function MonthlyDashboard({ report, month }: Props) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Link href={`/dashboard?m=${prevMonth(month)}`}>
             <Button variant="outline" size="icon">←</Button>
           </Link>
-          <h1 className="text-2xl font-bold">{formatMonth(month)}</h1>
+          <h1 className="min-w-0 flex-1 text-xl font-bold sm:text-2xl">{formatMonth(month)}</h1>
           {!isCurrentMonth && (
             <Link href={`/dashboard?m=${nextMonth(month)}`}>
               <Button variant="outline" size="icon">→</Button>
@@ -45,10 +45,10 @@ export function MonthlyDashboard({ report, month }: Props) {
         </div>
         <div className="flex gap-2">
           <Link href="/upload">
-            <Button size="sm"><Plus className="size-4" /> Importar</Button>
+            <Button size="sm" className="flex-1 sm:flex-none"><Plus className="size-4" /> Importar</Button>
           </Link>
           <Link href={`/report/${month}`}>
-            <Button variant="outline" size="sm"><FileText className="size-4" /> Relatório</Button>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none"><FileText className="size-4" /> Relatório</Button>
           </Link>
         </div>
       </div>

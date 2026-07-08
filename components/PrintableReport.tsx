@@ -13,7 +13,7 @@ interface Props {
 
 export function PrintableReport({ report }: Props) {
   return (
-    <div className="font-sans max-w-4xl mx-auto p-8 space-y-8 print:p-4">
+    <div className="mx-auto max-w-4xl space-y-8 p-0 font-sans sm:p-4 lg:p-8 print:p-4">
       {/* Header */}
       <div className="border-b pb-4 flex justify-between items-end">
         <div>
@@ -26,7 +26,7 @@ export function PrintableReport({ report }: Props) {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         <div className="border rounded-lg p-4 text-center">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Gasto</p>
           <p className="text-2xl font-bold text-destructive mt-1">{formatCents(report.totalExpenseCents)}</p>
@@ -109,7 +109,8 @@ export function PrintableReport({ report }: Props) {
         <h3 className="font-bold text-base mb-3 border-b pb-1">
           Todas as Transações ({report.transactions.length})
         </h3>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="min-w-[680px] w-full text-sm">
           <thead>
             <tr className="border-b text-muted-foreground text-left">
               <th className="py-2 pr-3 font-medium">Data</th>
@@ -150,6 +151,7 @@ export function PrintableReport({ report }: Props) {
             ))}
           </tbody>
         </table>
+        </div>
       </section>
     </div>
   )
