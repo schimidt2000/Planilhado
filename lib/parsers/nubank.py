@@ -117,7 +117,7 @@ def parse(pdf_bytes, password=None):
                 # ------------------------------------------------------------
                 m = re.match(
                     r'^(\d{2})\s+([A-Z]{3})\s+'      # day + month
-                    r'(?:•{4}\s+\d{4}\s+)?'           # optional card mask
+                    r'(?:•{4}\s+(\d{4})\s+)?'         # optional card mask
                     r'(.+?)\s+'                        # description (non-greedy)
                     r'([-−]?R\$\s*[\d.,]+)$',         # amount
                     line,
@@ -129,8 +129,9 @@ def parse(pdf_bytes, password=None):
 
                 day = m.group(1)
                 mon_str = m.group(2).upper()
-                description = m.group(3).strip()
-                value_str = m.group(4).strip()
+                card_last_four = m.group(3)
+                description = m.group(4).strip()
+                value_str = m.group(5).strip()
 
                 mon = MONTH_MAP.get(mon_str, '01')
                 year = year_ref or '2026'
@@ -175,6 +176,7 @@ def parse(pdf_bytes, password=None):
                     'amountOriginalCents': amount_original_cents,
                     'rawLine': line,
                     'isCharge': is_charge(norm_desc),
+                    'cardLastFour': card_last_four,
                 })
 
                 i += 1

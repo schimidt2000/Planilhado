@@ -249,6 +249,7 @@ def parse(pdf_bytes, password=None):
     transactions = []
     billing_month = None
     billing_year = None
+    card_last_four = None
 
     with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         # ----------------------------------------------------------------
@@ -256,6 +257,10 @@ def parse(pdf_bytes, password=None):
         # ----------------------------------------------------------------
         for page in pdf.pages:
             text = page.extract_text() or ''
+            if not card_last_four:
+                card_match = re.search(r'Picpay\s+Card\s+final\s+(\d{4})', text, re.IGNORECASE)
+                if card_match:
+                    card_last_four = card_match.group(1)
             if not billing_month:
                 billing_month = _extract_billing_month(text)
                 if billing_month:
@@ -357,6 +362,9 @@ def parse(pdf_bytes, password=None):
                             'rawLine': ' | '.join(cells),
                             'isCharge': _is_charge(norm_desc),
                         })
+
+    for transaction in transactions:
+        transaction['cardLastFour'] = card_last_four
 
     return {
         'source': 'picpay',

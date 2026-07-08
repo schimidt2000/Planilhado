@@ -130,6 +130,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               <span>{new Date(tx.date).toLocaleDateString('pt-BR')}</span>
               <span>·</span>
               <span>{SOURCE_LABELS[tx.sourceType] ?? tx.sourceType}</span>
+              {tx.cardLastFour && <><span>·</span><span>Cartão final {tx.cardLastFour}</span></>}
               {tx.category && <><span>·</span><span>{tx.category}</span></>}
               {tx.splitMode !== 'none' && splitTotal > 0 && <><span>·</span><span className="text-blue-600">Rateio {formatCents(splitTotal)}</span></>}
               {tx.debtorName && <><span>·</span><span className="text-blue-600">→ {tx.debtorName}</span></>}

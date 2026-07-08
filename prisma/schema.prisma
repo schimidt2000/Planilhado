@@ -76,6 +76,7 @@ model Transaction {
   currencyOriginal    String?
   amountOriginalCents Int?
   sourceType          String
+  cardLastFour        String?
   rawLine             String?
   externalIdentifier  String?
   origin              String        @default("imported")
@@ -97,6 +98,7 @@ model Transaction {
   @@index([userId, importSessionId])
   @@index([userId, date])
   @@index([userId, status, description])
+  @@index([userId, cardLastFour])
   @@unique([userId, sourceType, externalIdentifier])
 }
 

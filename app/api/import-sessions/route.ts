@@ -124,9 +124,14 @@ export async function POST(req: NextRequest) {
           currencyOriginal: t.currencyOriginal ?? null,
           amountOriginalCents: t.amountOriginalCents ?? null,
           sourceType: source,
+          cardLastFour: t.cardLastFour ?? null,
           rawLine: t.rawLine ?? null,
           externalIdentifier: t.externalIdentifier ?? null,
           origin: 'imported',
+          ...(t.assignedDebtorName && {
+            transactionType: 'receivable',
+            debtorName: t.assignedDebtorName,
+          }),
         })),
       },
     },
@@ -151,8 +156,13 @@ export async function POST(req: NextRequest) {
           currencyOriginal: item.currencyOriginal ?? null,
           amountOriginalCents: item.amountOriginalCents ?? null,
           sourceType: source,
+          cardLastFour: item.cardLastFour ?? null,
           rawLine: item.rawLine ?? null,
           externalIdentifier: item.externalIdentifier ?? null,
+          ...(item.assignedDebtorName && {
+            transactionType: 'receivable',
+            debtorName: item.assignedDebtorName,
+          }),
           reconciledAt: new Date(),
         },
       })

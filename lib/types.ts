@@ -25,6 +25,8 @@ export interface ParsedTransaction {
   amountOriginalCents?: number | null
   rawLine?: string | null
   externalIdentifier?: string | null
+  cardLastFour?: string | null
+  assignedDebtorName?: string | null
 }
 
 export interface ParseResult {
@@ -94,6 +96,7 @@ export interface TransactionWithMeta {
   currencyOriginal?: string | null
   amountOriginalCents?: number | null
   sourceType: string
+  cardLastFour?: string | null
   status: string
   transactionType?: string | null
   debtorName?: string | null

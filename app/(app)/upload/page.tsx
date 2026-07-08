@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileCheck2, FilePlus2, Link2, RotateCcw, Upload } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,9 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCents } from '@/lib/format'
 import { toast } from 'sonner'
-import type { ImportPreviewItem, ImportSource, InputType, ParseResult } from '@/lib/types'
+import type { Debtor, ImportPreviewItem, ImportSource, InputType, ParseResult } from '@/lib/types'
 
 type UploadState = 'idle' | 'parsing' | 'preview' | 'saving'
 
@@ -37,6 +38,14 @@ export default function UploadPage() {
   const [state, setState] = useState<UploadState>('idle')
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
+  const [debtors, setDebtors] = useState<Debtor[]>([])
+
+  useEffect(() => {
+    fetch('/api/debtors')
+      .then((response) => response.ok ? response.json() : [])
+      .then((data) => setDebtors(Array.isArray(data) ? data : []))
+      .catch(() => setDebtors([]))
+  }, [])
 
   function addFiles(inputType: Exclude<InputType, 'manual'>, selected: FileList | null) {
     if (!selected?.length) return
@@ -138,6 +147,20 @@ export default function UploadPage() {
     }
   }
 
+  function assignCard(fileId: string, cardLastFour: string, debtorName: string | null) {
+    setPrepared((current) => current.map((file) => {
+      if (file.input.id !== fileId) return file
+      return {
+        ...file,
+        preview: file.preview.map((item) =>
+          item.cardLastFour === cardLastFour
+            ? { ...item, assignedDebtorName: debtorName }
+            : item
+        ),
+      }
+    }))
+  }
+
   const allItems = prepared.flatMap((file) => file.preview)
   const counts = {
     new: allItems.filter((item) => item.action === 'new').length,
@@ -173,13 +196,49 @@ export default function UploadPage() {
                   <Badge variant="outline">{file.source}</Badge>
                 </div>
               </CardHeader>
-              <CardContent className="divide-y p-0">
+              <CardContent className="p-0">
+                {file.input.inputType === 'fatura' && (() => {
+                  const cards = [...new Set(file.preview.map((item) => item.cardLastFour).filter((card): card is string => Boolean(card)))]
+                  if (cards.length === 0) return null
+                  return (
+                    <div className="border-y bg-muted/30 px-5 py-4">
+                      <p className="text-sm font-medium">Quer associar algum devedor a algum cartão?</p>
+                      <p className="mt-1 text-xs text-muted-foreground">A associação vale somente para esta fatura e marca as compras do cartão como valores a receber.</p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {cards.map((card) => {
+                          const assigned = file.preview.find((item) => item.cardLastFour === card)?.assignedDebtorName ?? 'none'
+                          const transactionCount = file.preview.filter((item) => item.cardLastFour === card).length
+                          return (
+                            <div key={card} className="grid gap-2 sm:grid-cols-[1fr_220px] sm:items-center">
+                              <div>
+                                <p className="text-sm font-medium">Cartão final {card}</p>
+                                <p className="text-xs text-muted-foreground">{transactionCount} transação(ões)</p>
+                              </div>
+                              <Select value={assigned} onValueChange={(value) => assignCard(file.input.id, card, value === 'none' ? null : value)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Não associar</SelectItem>
+                                  {debtors.map((debtor) => <SelectItem key={debtor.id} value={debtor.name}>{debtor.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
+                <div className="divide-y">
                 {file.preview.map((item) => (
                   <div key={item.key} className="grid gap-2 px-5 py-3 sm:grid-cols-[110px_1fr_auto_auto] sm:items-center">
                     <span className="text-xs text-muted-foreground">{new Date(item.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{item.description}</p>
-                      {item.action === 'complete' && <p className="truncate text-xs text-muted-foreground">Completa: {item.matchedDescription}</p>}
+                      <p className="truncate text-xs text-muted-foreground">
+                        {item.cardLastFour ? `Cartão final ${item.cardLastFour}` : ''}
+                        {item.assignedDebtorName ? ` · ${item.assignedDebtorName}` : ''}
+                        {item.action === 'complete' ? ` · Completa: ${item.matchedDescription}` : ''}
+                      </p>
                     </div>
                     <span className={item.isCredit ? 'text-sm font-semibold text-green-600' : 'text-sm font-semibold'}>{item.isCredit ? '+' : ''}{formatCents(item.amountCents)}</span>
                     <Badge variant="outline" className={
@@ -191,6 +250,7 @@ export default function UploadPage() {
                     </Badge>
                   </div>
                 ))}
+                </div>
               </CardContent>
             </Card>
           ))}

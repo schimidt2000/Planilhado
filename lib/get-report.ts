@@ -178,6 +178,7 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
       currencyOriginal: t.currencyOriginal,
       amountOriginalCents: t.amountOriginalCents,
       sourceType: t.sourceType,
+      cardLastFour: t.cardLastFour,
       status: t.status,
       transactionType: t.transactionType,
       debtorName: t.debtorName,

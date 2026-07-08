@@ -265,6 +265,7 @@ def parse(pdf_bytes, password=None):
     """
     transactions = []
     billing_month = None
+    card_last_four = None
 
     with pdfplumber.open(BytesIO(pdf_bytes), password=password) as pdf:
         full_text = ''
@@ -274,6 +275,9 @@ def parse(pdf_bytes, password=None):
 
         # Try to extract billing month from full text
         billing_month = _extract_month_from_text(full_text)
+        card_match = re.search(r'CARTÃO\s*\d+\*{4}(\d{4})', full_text, re.IGNORECASE)
+        if card_match:
+            card_last_four = card_match.group(1)
 
         # ----------------------------------------------------------------
         # Primary strategy: extract_tables() on pages that contain expenses
@@ -331,6 +335,9 @@ def parse(pdf_bytes, password=None):
         if key not in seen:
             seen.add(key)
             unique.append(t)
+
+    for transaction in transactions:
+        transaction['cardLastFour'] = card_last_four
 
     return {
         'source': 'inter',
