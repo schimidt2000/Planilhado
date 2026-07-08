@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { created, conflict, error, unauthorized } from '@/lib/api-response'
+import { created, conflict, error, ok, unauthorized } from '@/lib/api-response'
 import type { ParsedTransaction, ImportSource, InputType } from '@/lib/types'
 
 export async function POST(req: NextRequest) {
@@ -62,8 +62,10 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id) return unauthorized()
   const userId = session.user.id
 
+  const month = req.nextUrl.searchParams.get('month')
+
   const sessions = await prisma.importSession.findMany({
-    where: { userId },
+    where: { userId, ...(month && { month }) },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -71,9 +73,37 @@ export async function GET(req: NextRequest) {
       source: true,
       inputType: true,
       createdAt: true,
-      _count: { select: { transactions: true } },
+      transactions: {
+        select: {
+          id: true,
+          status: true,
+          amountCents: true,
+          isCredit: true,
+        },
+      },
     },
   })
 
-  return created(sessions)
+  return ok(sessions.map((session) => {
+    const total = session.transactions.length
+    const approved = session.transactions.filter((tx) => tx.status === 'approved').length
+    const rejected = session.transactions.filter((tx) => tx.status === 'rejected').length
+    const pending = session.transactions.filter((tx) => tx.status === 'pending').length
+    const totalCents = session.transactions
+      .filter((tx) => !tx.isCredit)
+      .reduce((sum, tx) => sum + tx.amountCents, 0)
+
+    return {
+      id: session.id,
+      month: session.month,
+      source: session.source,
+      inputType: session.inputType,
+      createdAt: session.createdAt.toISOString(),
+      total,
+      approved,
+      rejected,
+      pending,
+      totalCents,
+    }
+  }))
 }

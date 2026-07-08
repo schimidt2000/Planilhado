@@ -28,3 +28,24 @@ export async function GET(
 
   return ok(importSession)
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth()
+  if (!session?.user?.id) return unauthorized()
+  const userId = session.user.id
+
+  const { id } = await params
+  const importSession = await prisma.importSession.findUnique({
+    where: { id },
+    select: { userId: true },
+  })
+
+  if (!importSession) return notFound('Sessão de importação')
+  if (importSession.userId !== userId) return forbidden()
+
+  await prisma.importSession.delete({ where: { id } })
+  return ok({ deleted: true })
+}
