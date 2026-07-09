@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { created, error, ok, unauthorized } from '@/lib/api-response'
+import { getMonthlyReport } from '@/lib/get-report'
+import { validatePaymentAmount } from '@/lib/finance-rules'
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -41,6 +43,11 @@ export async function POST(req: NextRequest) {
     select: { id: true },
   })
   if (!debtor) return error('Devedor não encontrado', 404)
+
+  const report = await getMonthlyReport(session.user.id, month)
+  const debtorBalance = report?.byDebtor.find((item) => item.debtorId === debtor.id)?.totalCents ?? 0
+  const paymentError = validatePaymentAmount({ amountCents, balanceCents: debtorBalance })
+  if (paymentError) return error(paymentError, 422)
 
   const payment = await prisma.debtorPayment.create({
     data: {

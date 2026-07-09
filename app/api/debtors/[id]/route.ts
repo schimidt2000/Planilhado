@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { error, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
+import { conflict, error, forbidden, notFound, ok, unauthorized } from '@/lib/api-response'
 import { normalizeWhatsApp } from '@/lib/whatsapp'
 
 function sanitizeName(value: unknown): string {
@@ -26,6 +26,14 @@ export async function PATCH(
 
   if (name.length < 2) return error('Informe um nome com pelo menos 2 caracteres')
   if (whatsapp && whatsapp.length < 12) return error('Informe o WhatsApp com DDD')
+
+  if (name !== current.name) {
+    const duplicate = await prisma.debtor.findUnique({
+      where: { userId_name: { userId: session.user.id, name } },
+      select: { id: true },
+    })
+    if (duplicate && duplicate.id !== id) return conflict('Esse devedor já está cadastrado')
+  }
 
   const updated = await prisma.debtor.update({
     where: { id },

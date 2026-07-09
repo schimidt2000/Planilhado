@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCents } from '@/lib/format'
 import { CATEGORY_NAMES, getSubcategories } from '@/lib/categories'
+import { splitTotalCents, validateTransactionDecision } from '@/lib/finance-rules'
 import type { Debtor, SplitMode, TransactionSplitInput, TransactionWithMeta, SuggestionResult, TransactionType } from '@/lib/types'
 
 interface Props {
@@ -64,6 +65,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
     onChange(tx.id, {
       ...(suggestion.category && { category: suggestion.category }),
       ...(suggestion.subcategory && { subcategory: suggestion.subcategory }),
+      ...(suggestion.debtorId && { debtorId: suggestion.debtorId }),
       ...(suggestion.debtorName && { debtorName: suggestion.debtorName }),
       ...(suggestion.transactionType && { transactionType: suggestion.transactionType }),
     })
@@ -71,26 +73,27 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
 
   function setSplitMode(splitMode: SplitMode) {
     if (splitMode === 'none') {
-      onChange(tx.id, { splitMode, splits: [], debtorName: null, transactionType: 'expense' })
+      onChange(tx.id, { splitMode, splits: [], debtorId: null, debtorName: null, transactionType: 'expense' })
       return
     }
 
     onChange(tx.id, {
       splitMode,
       transactionType: 'expense',
+      debtorId: null,
       debtorName: null,
-      splits: tx.splits?.length ? normalizeSplits(splitMode, tx.splits) : [{ debtorName: '', amountCents: 0 }],
+      splits: tx.splits?.length ? normalizeSplits(splitMode, tx.splits) : [{ debtorId: null, debtorName: '', amountCents: 0 }],
     })
   }
 
   function normalizeSplits(splitMode: SplitMode, splits: TransactionSplitInput[]) {
     if (splitMode !== 'equal') return splits
-    const named = splits.filter((split) => split.debtorName.trim())
+    const named = splits.filter((split) => split.debtorId || split.debtorName.trim())
     if (named.length === 0) return splits.map((split) => ({ ...split, amountCents: 0 }))
     const equalShare = Math.floor(tx.amountCents / (named.length + 1))
     return splits.map((split) => ({
       ...split,
-      amountCents: split.debtorName.trim() ? equalShare : 0,
+      amountCents: split.debtorId || split.debtorName.trim() ? equalShare : 0,
     }))
   }
 
@@ -101,7 +104,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
   }
 
   function addSplit() {
-    const next = [...(tx.splits ?? []), { debtorName: '', amountCents: 0 }]
+    const next = [...(tx.splits ?? []), { debtorId: null, debtorName: '', amountCents: 0 }]
     onChange(tx.id, { splits: normalizeSplits(tx.splitMode, next) })
   }
 
@@ -110,7 +113,38 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
     onChange(tx.id, { splits: normalizeSplits(tx.splitMode, next) })
   }
 
-  const splitTotal = (tx.splits ?? []).reduce((sum, split) => sum + split.amountCents, 0)
+  function debtorValue(debtorId?: string | null, debtorName?: string | null) {
+    if (debtorId) return debtorId
+    if (debtorName?.trim()) return `legacy:${debtorName.trim()}`
+    return 'none'
+  }
+
+  function debtorPatch(value: string | null) {
+    if (!value || value === 'none') return { debtorId: null, debtorName: null }
+    if (value.startsWith('legacy:')) return { debtorId: null, debtorName: value.slice(7) }
+    const debtor = debtors.find((item) => item.id === value)
+    return { debtorId: debtor?.id ?? null, debtorName: debtor?.name ?? null }
+  }
+
+  function splitDebtorPatch(value: string | null): Partial<TransactionSplitInput> {
+    const patch = debtorPatch(value)
+    return { debtorId: patch.debtorId, debtorName: patch.debtorName ?? '' }
+  }
+
+  function hasLegacyDebtor(debtorId?: string | null, debtorName?: string | null) {
+    const name = debtorName?.trim()
+    return Boolean(!debtorId && name && !debtors.some((debtor) => debtor.name.toLowerCase() === name.toLowerCase()))
+  }
+
+  const splitTotal = splitTotalCents(tx.splits)
+  const approvalError = validateTransactionDecision({
+    amountCents: tx.amountCents,
+    transactionType: tx.transactionType,
+    debtorId: tx.debtorId,
+    debtorName: tx.debtorName,
+    splitMode: tx.splitMode,
+    splits: tx.splits,
+  })
 
   return (
     <Card className={`transition-all ${tx.isCharge ? 'border-amber-200' : ''}`}>
@@ -152,7 +186,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
             {suggestion && (
               <div className="p-2 rounded bg-blue-50 border border-blue-200 flex items-center justify-between">
                 <div className="text-xs text-blue-700">
-                  <strong>Sugestão {suggestion.confidence === 'high' ? '🎯' : '💡'}:</strong>
+                  <strong>Sugestão:</strong>
                   {suggestion.category && ` ${suggestion.category}`}
                   {suggestion.debtorName && ` · Devedor: ${suggestion.debtorName}`}
                   {suggestion.transactionType === 'receivable' && ' · A receber'}
@@ -172,6 +206,8 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                     const transactionType = (v as TransactionType) || null
                     onChange(tx.id, {
                       transactionType,
+                      debtorId: transactionType === 'receivable' ? tx.debtorId : null,
+                      debtorName: transactionType === 'receivable' ? tx.debtorName : null,
                       splitMode: transactionType === 'receivable' ? 'none' : tx.splitMode,
                       splits: transactionType === 'receivable' ? [] : tx.splits,
                     })
@@ -192,18 +228,25 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               {tx.transactionType === 'receivable' && (
                 <div>
                   <Label className="text-xs">Devedor</Label>
-                  <Input
-                    className="h-8 text-xs mt-1"
-                    list={`debtors-${tx.id}`}
-                    placeholder="Nome do devedor"
-                    value={tx.debtorName ?? ''}
-                    onChange={(e) => onChange(tx.id, { debtorName: e.target.value || null })}
-                  />
-                  <datalist id={`debtors-${tx.id}`}>
-                    {debtors.map((debtor) => (
-                      <option key={debtor.id} value={debtor.name} />
-                    ))}
-                  </datalist>
+                  <Select
+                    value={debtorValue(tx.debtorId, tx.debtorName)}
+                    onValueChange={(value) => onChange(tx.id, debtorPatch(value))}
+                  >
+                    <SelectTrigger className="h-8 text-xs mt-1">
+                      <SelectValue placeholder="Selecione...">
+                        {tx.debtorName || 'Selecione...'}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Selecione...</SelectItem>
+                      {hasLegacyDebtor(tx.debtorId, tx.debtorName) && (
+                        <SelectItem value={`legacy:${tx.debtorName}`}>{tx.debtorName} (sem cadastro)</SelectItem>
+                      )}
+                      {debtors.map((debtor) => (
+                        <SelectItem key={debtor.id} value={debtor.id}>{debtor.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
@@ -292,13 +335,25 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                 {(tx.splits ?? []).map((split, index) => (
                   <div key={index} className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
                     <div>
-                      <Input
-                        className="h-8 text-xs"
-                        list={`split-debtors-${tx.id}`}
-                        placeholder="Nome"
-                        value={split.debtorName}
-                        onChange={(e) => updateSplit(index, { debtorName: e.target.value })}
-                      />
+                      <Select
+                        value={debtorValue(split.debtorId, split.debtorName)}
+                        onValueChange={(value) => updateSplit(index, splitDebtorPatch(value))}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Pessoa">
+                            {split.debtorName || 'Pessoa'}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Selecione...</SelectItem>
+                          {hasLegacyDebtor(split.debtorId, split.debtorName) && (
+                            <SelectItem value={`legacy:${split.debtorName}`}>{split.debtorName} (sem cadastro)</SelectItem>
+                          )}
+                          {debtors.map((debtor) => (
+                            <SelectItem key={debtor.id} value={debtor.id}>{debtor.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <Input
                       className="h-8 text-xs"
@@ -315,25 +370,20 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                   </div>
                 ))}
 
-                <datalist id={`split-debtors-${tx.id}`}>
-                  {debtors.map((debtor) => (
-                    <option key={debtor.id} value={debtor.name} />
-                  ))}
-                </datalist>
-
                 <div className="flex flex-wrap gap-3 text-xs">
                   <span className="text-muted-foreground">A receber: {formatCents(splitTotal)}</span>
                   <span className="text-muted-foreground">Sua parte: {formatCents(Math.max(0, tx.amountCents - splitTotal))}</span>
-                  {splitTotal > tx.amountCents && <span className="text-destructive">Rateio maior que o valor da compra</span>}
+                  {approvalError && <span className="text-destructive">{approvalError}</span>}
                 </div>
               </div>
             )}
 
             <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+              {approvalError && <p className="text-xs text-destructive sm:mr-auto sm:self-center">{approvalError}</p>}
               <Button type="button" variant="outline" onClick={() => onDecide(tx, 'rejected')}>
                 <X className="size-4" /> Recusar gasto
               </Button>
-              <Button type="button" onClick={() => onDecide(tx, 'approved')}>
+              <Button type="button" disabled={Boolean(approvalError)} onClick={() => onDecide(tx, 'approved')}>
                 <Check className="size-4" /> Aprovar gasto
               </Button>
             </div>

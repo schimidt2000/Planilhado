@@ -28,7 +28,16 @@ interface PreparedFile {
   input: QueuedFile
   source: ImportSource
   month: string
+  fileHash: string
   preview: ImportPreviewItem[]
+}
+
+async function sha256(file: File) {
+  const buffer = await file.arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 export default function UploadPage() {
@@ -67,6 +76,7 @@ export default function UploadPage() {
   }
 
   async function prepareFile(input: QueuedFile): Promise<PreparedFile> {
+    const fileHash = await sha256(input.file)
     const formData = new FormData()
     formData.append('file', input.file)
     formData.append('inputType', input.inputType)
@@ -88,7 +98,7 @@ export default function UploadPage() {
     })
     const previewData = await previewResponse.json()
     if (!previewResponse.ok) throw new Error(previewData.error || 'Erro ao comparar lançamentos')
-    return { input, source: result.source, month: result.month, preview: previewData.preview }
+    return { input, source: result.source, month: result.month, fileHash, preview: previewData.preview }
   }
 
   async function analyze(event: React.FormEvent) {
@@ -129,6 +139,9 @@ export default function UploadPage() {
             month: file.month,
             source: file.source,
             inputType: file.input.inputType,
+            fileName: file.input.file.name,
+            fileSize: file.input.file.size,
+            fileHash: file.fileHash,
             transactions: file.preview,
           }),
         })
@@ -147,14 +160,15 @@ export default function UploadPage() {
     }
   }
 
-  function assignCard(fileId: string, cardLastFour: string, debtorName: string | null) {
+  function assignCard(fileId: string, cardLastFour: string, debtorId: string | null) {
+    const debtor = debtorId ? debtors.find((item) => item.id === debtorId) : null
     setPrepared((current) => current.map((file) => {
       if (file.input.id !== fileId) return file
       return {
         ...file,
         preview: file.preview.map((item) =>
           item.cardLastFour === cardLastFour
-            ? { ...item, assignedDebtorName: debtorName }
+            ? { ...item, assignedDebtorId: debtor?.id ?? null, assignedDebtorName: debtor?.name ?? null }
             : item
         ),
       }
@@ -206,7 +220,7 @@ export default function UploadPage() {
                       <p className="mt-1 text-xs text-muted-foreground">A associação vale somente para esta fatura e marca as compras do cartão como valores a receber.</p>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         {cards.map((card) => {
-                          const assigned = file.preview.find((item) => item.cardLastFour === card)?.assignedDebtorName ?? 'none'
+                          const assigned = file.preview.find((item) => item.cardLastFour === card)?.assignedDebtorId ?? 'none'
                           const transactionCount = file.preview.filter((item) => item.cardLastFour === card).length
                           return (
                             <div key={card} className="grid gap-2 sm:grid-cols-[1fr_220px] sm:items-center">
@@ -214,7 +228,7 @@ export default function UploadPage() {
                                 <p className="text-sm font-medium">Cartão final {card}</p>
                                 <p className="text-xs text-muted-foreground">{transactionCount} transação(ões)</p>
                               </div>
-                              <Select value={assigned} onValueChange={(value) => assignCard(file.input.id, card, value === 'none' ? null : value)}>
+                              <Select value={assigned} onValueChange={(value) => assignCard(file.input.id, card, !value || value === 'none' ? null : value)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">Não associar</SelectItem>

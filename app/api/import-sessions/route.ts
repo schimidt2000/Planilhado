@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { created, error, ok, unauthorized } from '@/lib/api-response'
 import type { ImportPreviewItem, ParsedTransaction, ImportSource, InputType } from '@/lib/types'
+import { resolveDebtorReference } from '@/lib/server-debtors'
 
 function dayDistance(left: Date, right: Date) {
   return Math.abs(left.getTime() - right.getTime()) / 86_400_000
@@ -80,12 +81,15 @@ export async function POST(req: NextRequest) {
   const userId = session.user.id
 
   const body = await req.json()
-  const { month, source, inputType, transactions, previewOnly } = body as {
+  const { month, source, inputType, transactions, previewOnly, fileName, fileSize, fileHash } = body as {
     month: string
     source: ImportSource
     inputType: InputType
     transactions: (ParsedTransaction | ImportPreviewItem)[]
     previewOnly?: boolean
+    fileName?: string | null
+    fileSize?: number | null
+    fileHash?: string | null
   }
 
   if (!month || !source || !inputType || !Array.isArray(transactions)) {
@@ -103,6 +107,28 @@ export async function POST(req: NextRequest) {
     : await buildPreview(userId, source, transactions)
   const newItems = preview.filter((item) => item.action === 'new')
   const completedItems = preview.filter((item) => item.action === 'complete' && item.matchedTransactionId)
+  const duplicateCount = preview.filter((item) => item.action === 'duplicate').length
+
+  let resolvedNewItems: {
+    item: ImportPreviewItem
+    debtor: Awaited<ReturnType<typeof resolveDebtorReference>>
+  }[]
+  let resolvedCompletedItems: {
+    item: ImportPreviewItem
+    debtor: Awaited<ReturnType<typeof resolveDebtorReference>>
+  }[]
+  try {
+    resolvedNewItems = await Promise.all(newItems.map(async (item) => ({
+      item,
+      debtor: await resolveDebtorReference(userId, item.assignedDebtorId, item.assignedDebtorName),
+    })))
+    resolvedCompletedItems = await Promise.all(completedItems.map(async (item) => ({
+      item,
+      debtor: await resolveDebtorReference(userId, item.assignedDebtorId, item.assignedDebtorName),
+    })))
+  } catch (err) {
+    return error(err instanceof Error ? err.message : 'Devedor inválido')
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const importSession = await tx.importSession.create({
@@ -111,8 +137,14 @@ export async function POST(req: NextRequest) {
         month,
         source,
         inputType,
+        fileName: fileName?.trim() || null,
+        fileSize: Number.isFinite(Number(fileSize)) ? Math.round(Number(fileSize)) : null,
+        fileHash: fileHash?.trim() || null,
+        newCount: newItems.length,
+        completedCount: completedItems.length,
+        duplicateCount,
         transactions: {
-          create: newItems.map((t) => ({
+          create: resolvedNewItems.map(({ item: t, debtor }) => ({
           userId,
           date: new Date(t.date),
           description: t.description,
@@ -128,9 +160,10 @@ export async function POST(req: NextRequest) {
           rawLine: t.rawLine ?? null,
           externalIdentifier: t.externalIdentifier ?? null,
           origin: 'imported',
-          ...(t.assignedDebtorName && {
+          ...(debtor.debtorName && {
             transactionType: 'receivable',
-            debtorName: t.assignedDebtorName,
+            debtorId: debtor.debtorId,
+            debtorName: debtor.debtorName,
           }),
         })),
       },
@@ -138,7 +171,7 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     })
 
-    for (const item of completedItems) {
+    for (const { item, debtor } of resolvedCompletedItems) {
       await tx.transaction.updateMany({
         where: {
           id: item.matchedTransactionId,
@@ -159,9 +192,10 @@ export async function POST(req: NextRequest) {
           cardLastFour: item.cardLastFour ?? null,
           rawLine: item.rawLine ?? null,
           externalIdentifier: item.externalIdentifier ?? null,
-          ...(item.assignedDebtorName && {
+          ...(debtor.debtorName && {
             transactionType: 'receivable',
-            debtorName: item.assignedDebtorName,
+            debtorId: debtor.debtorId,
+            debtorName: debtor.debtorName,
           }),
           reconciledAt: new Date(),
         },
@@ -175,7 +209,7 @@ export async function POST(req: NextRequest) {
     sessionId: result.id,
     imported: newItems.length,
     completed: completedItems.length,
-    ignored: preview.filter((item) => item.action === 'duplicate').length,
+    ignored: duplicateCount,
   })
 }
 
@@ -194,6 +228,12 @@ export async function GET(req: NextRequest) {
       month: true,
       source: true,
       inputType: true,
+      fileName: true,
+      fileSize: true,
+      fileHash: true,
+      newCount: true,
+      completedCount: true,
+      duplicateCount: true,
       createdAt: true,
       transactions: {
         select: {
@@ -211,6 +251,9 @@ export async function GET(req: NextRequest) {
     const approved = session.transactions.filter((tx) => tx.status === 'approved').length
     const rejected = session.transactions.filter((tx) => tx.status === 'rejected').length
     const pending = session.transactions.filter((tx) => tx.status === 'pending').length
+    const newCount = session.newCount || total
+    const completedCount = session.completedCount
+    const duplicateCount = session.duplicateCount
     const totalCents = session.transactions
       .filter((tx) => !tx.isCredit)
       .reduce((sum, tx) => sum + tx.amountCents, 0)
@@ -220,6 +263,13 @@ export async function GET(req: NextRequest) {
       month: session.month,
       source: session.source,
       inputType: session.inputType,
+      fileName: session.fileName,
+      fileSize: session.fileSize,
+      fileHash: session.fileHash,
+      newCount,
+      completedCount,
+      duplicateCount,
+      processedCount: newCount + completedCount + duplicateCount,
       createdAt: session.createdAt.toISOString(),
       total,
       approved,

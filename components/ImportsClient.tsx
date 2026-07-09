@@ -13,6 +13,13 @@ interface ImportSummary {
   month: string
   source: string
   inputType: string
+  fileName?: string | null
+  fileSize?: number | null
+  fileHash?: string | null
+  newCount: number
+  completedCount: number
+  duplicateCount: number
+  processedCount: number
   createdAt: string
   total: number
   approved: number
@@ -26,6 +33,12 @@ const SOURCE_LABELS: Record<string, string> = {
   inter: 'Inter',
   picpay: 'PicPay',
   pix: 'Pix',
+}
+
+function formatFileSize(size?: number | null) {
+  if (!size) return null
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 export function ImportsClient({ initialMonth }: { initialMonth: string }) {
@@ -61,7 +74,7 @@ export function ImportsClient({ initialMonth }: { initialMonth: string }) {
 
   async function deleteImport(item: ImportSummary) {
     const confirmed = window.confirm(
-      `Remover a importação ${SOURCE_LABELS[item.source] ?? item.source} (${item.inputType}) de ${item.month}? Isso apaga as transações dessa importação.`
+      `Remover a importação ${item.fileName ?? `${SOURCE_LABELS[item.source] ?? item.source} (${item.inputType})`} de ${item.month}? Isso apaga as transações dessa importação.`
     )
     if (!confirmed) return
 
@@ -135,11 +148,16 @@ export function ImportsClient({ initialMonth }: { initialMonth: string }) {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="text-base">
-                    {SOURCE_LABELS[item.source] ?? item.source} · {item.inputType}
+                    {item.fileName ?? `${SOURCE_LABELS[item.source] ?? item.source} · ${item.inputType}`}
                   </CardTitle>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Importado em {new Date(item.createdAt).toLocaleString('pt-BR')}
+                    {SOURCE_LABELS[item.source] ?? item.source} · {item.inputType} · importado em {new Date(item.createdAt).toLocaleString('pt-BR')}
                   </p>
+                  {(item.fileSize || item.fileHash) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {[formatFileSize(item.fileSize), item.fileHash ? `hash ${item.fileHash.slice(0, 10)}` : null].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </div>
                 <Badge variant={item.pending > 0 ? 'outline' : 'default'}>
                   {item.pending > 0 ? `${item.pending} pendente(s)` : 'Revisado'}
@@ -149,26 +167,31 @@ export function ImportsClient({ initialMonth }: { initialMonth: string }) {
             <CardContent className="space-y-4">
               <div className="grid gap-2 text-sm sm:grid-cols-5">
                 <div>
-                  <p className="text-muted-foreground">Total</p>
-                  <p className="font-semibold">{item.total}</p>
+                  <p className="text-muted-foreground">Arquivo</p>
+                  <p className="font-semibold">{item.processedCount || item.total}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Aprovadas</p>
-                  <p className="font-semibold text-green-600">{item.approved}</p>
+                  <p className="text-muted-foreground">Novos</p>
+                  <p className="font-semibold text-blue-600">{item.newCount || item.total}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Rejeitadas</p>
-                  <p className="font-semibold text-destructive">{item.rejected}</p>
+                  <p className="text-muted-foreground">Completados</p>
+                  <p className="font-semibold text-green-600">{item.completedCount}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Pendentes</p>
                   <p className="font-semibold">{item.pending}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Valor bruto</p>
+                  <p className="text-muted-foreground">Valor novo</p>
                   <p className="font-semibold">{formatCents(item.totalCents)}</p>
                 </div>
               </div>
+              {item.duplicateCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {item.duplicateCount} movimentação(ões) já existiam e foram ignoradas.
+                </p>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 <Link href={`/review/${item.id}`}>

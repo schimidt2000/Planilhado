@@ -38,7 +38,9 @@ export async function GET(req: NextRequest) {
     description: string
     category: string | null
     subcategory: string | null
+    debtorId: string | null
     debtorName: string | null
+    debtor: { name: string } | null
     transactionType: string | null
     installmentCurrent: number | null
     installmentTotal: number | null
@@ -55,7 +57,9 @@ export async function GET(req: NextRequest) {
       description: true,
       category: true,
       subcategory: true,
+      debtorId: true,
       debtorName: true,
+      debtor: { select: { name: true } },
       transactionType: true,
       installmentCurrent: true,
       installmentTotal: true,
@@ -76,7 +80,8 @@ export async function GET(req: NextRequest) {
     )
     if (prevInstallment?.debtorName) {
       return ok<SuggestionResult>({
-        debtorName: prevInstallment.debtorName,
+        debtorId: prevInstallment.debtorId,
+        debtorName: prevInstallment.debtor?.name ?? prevInstallment.debtorName,
         transactionType: (prevInstallment.transactionType as 'expense' | 'receivable') ?? undefined,
         category: prevInstallment.category ?? undefined,
         subcategory: prevInstallment.subcategory ?? undefined,
@@ -86,26 +91,35 @@ export async function GET(req: NextRequest) {
   }
 
   // Priority 2: most common debtor
-  const debtorCounts: Record<string, number> = {}
+  const debtorCounts: Record<string, { count: number; debtorId: string | null; debtorName: string }> = {}
   const categoryCounts: Record<string, number> = {}
   const subcategoryCounts: Record<string, number> = {}
   const typeCounts: Record<string, number> = {}
 
   for (const t of matches) {
-    if (t.debtorName) debtorCounts[t.debtorName] = (debtorCounts[t.debtorName] || 0) + 1
+    const debtorName = t.debtor?.name ?? t.debtorName
+    if (debtorName) {
+      const key = t.debtorId ? `id:${t.debtorId}` : `name:${debtorName.toLowerCase()}`
+      debtorCounts[key] = {
+        count: (debtorCounts[key]?.count ?? 0) + 1,
+        debtorId: t.debtorId,
+        debtorName,
+      }
+    }
     if (t.category) categoryCounts[t.category] = (categoryCounts[t.category] || 0) + 1
     if (t.subcategory) subcategoryCounts[t.subcategory] = (subcategoryCounts[t.subcategory] || 0) + 1
     if (t.transactionType) typeCounts[t.transactionType] = (typeCounts[t.transactionType] || 0) + 1
   }
 
-  const topDebtor = Object.entries(debtorCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const topDebtor = Object.values(debtorCounts).sort((a, b) => b.count - a.count)[0]
   const topCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
   const topSubcategory = Object.entries(subcategoryCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
   const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]?.[0]
 
   const suggestion: SuggestionResult = {
     confidence: matches.length >= 3 ? 'high' : 'medium',
-    ...(topDebtor && { debtorName: topDebtor }),
+    ...(topDebtor?.debtorId && { debtorId: topDebtor.debtorId }),
+    ...(topDebtor?.debtorName && { debtorName: topDebtor.debtorName }),
     ...(topCategory && { category: topCategory }),
     ...(topSubcategory && { subcategory: topSubcategory }),
     ...(topType && { transactionType: topType as 'expense' | 'receivable' }),

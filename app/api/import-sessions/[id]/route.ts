@@ -18,7 +18,13 @@ export async function GET(
     include: {
       transactions: {
         orderBy: { date: 'asc' },
-        include: { splits: { orderBy: { debtorName: 'asc' } } },
+        include: {
+          debtor: { select: { id: true, name: true } },
+          splits: {
+            orderBy: { debtorName: 'asc' },
+            include: { debtor: { select: { id: true, name: true } } },
+          },
+        },
       },
     },
   })
@@ -26,7 +32,17 @@ export async function GET(
   if (!importSession) return notFound('Sessão de importação')
   if (importSession.userId !== userId) return forbidden()
 
-  return ok(importSession)
+  return ok({
+    ...importSession,
+    transactions: importSession.transactions.map((transaction) => ({
+      ...transaction,
+      debtorName: transaction.debtor?.name ?? transaction.debtorName,
+      splits: transaction.splits.map((split) => ({
+        ...split,
+        debtorName: split.debtor?.name ?? split.debtorName,
+      })),
+    })),
+  })
 }
 
 export async function DELETE(

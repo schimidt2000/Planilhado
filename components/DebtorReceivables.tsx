@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCents } from '@/lib/format'
+import { validatePaymentAmount } from '@/lib/finance-rules'
 import type { MonthlyReport } from '@/lib/types'
 
 type DebtorRow = MonthlyReport['byDebtor'][number]
@@ -47,6 +48,17 @@ export function DebtorReceivables({ debtors, month }: { debtors: DebtorRow[]; mo
 
   async function savePayment(event: React.FormEvent) {
     event.preventDefault()
+    const debtor = debtors.find((item) => item.debtorId === payingDebtorId)
+    const amountCents = Math.round(Number(amount) * 100)
+    const validationError = validatePaymentAmount({
+      amountCents,
+      balanceCents: debtor?.totalCents ?? 0,
+    })
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
+
     setSaving(true)
     const response = await fetch('/api/debtor-payments', {
       method: 'POST',
@@ -54,7 +66,7 @@ export function DebtorReceivables({ debtors, month }: { debtors: DebtorRow[]; mo
       body: JSON.stringify({
         debtorId: payingDebtorId,
         month,
-        amountCents: Math.round(Number(amount) * 100),
+        amountCents,
         paidAt,
         notes,
       }),
@@ -100,9 +112,9 @@ export function DebtorReceivables({ debtors, month }: { debtors: DebtorRow[]; mo
               </div>
               <div className="flex flex-wrap gap-2">
                 {debtor.debtorId ? (
-                  <Button variant="outline" size="sm" onClick={() => isPaying ? setPayingDebtorId(null) : openPayment(debtor.debtorId!)}>
+                  <Button variant="outline" size="sm" disabled={!isPaying && debtor.totalCents <= 0} onClick={() => isPaying ? setPayingDebtorId(null) : openPayment(debtor.debtorId!)}>
                     {isPaying ? <X className="size-4" /> : <HandCoins className="size-4" />}
-                    {isPaying ? 'Cancelar' : 'Registrar pagamento'}
+                    {isPaying ? 'Cancelar' : debtor.totalCents <= 0 ? 'Saldo quitado' : 'Registrar pagamento'}
                   </Button>
                 ) : (
                   <Link href="/debtors"><Button variant="outline" size="sm">Cadastrar pessoa</Button></Link>
@@ -119,7 +131,8 @@ export function DebtorReceivables({ debtors, month }: { debtors: DebtorRow[]; mo
               <form onSubmit={savePayment} className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-[140px_150px_1fr_auto] sm:items-end">
                 <div>
                   <Label htmlFor={`payment-amount-${debtor.debtorId}`}>Valor pago</Label>
-                  <Input id={`payment-amount-${debtor.debtorId}`} className="mt-1" type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+                  <Input id={`payment-amount-${debtor.debtorId}`} className="mt-1" type="number" min="0.01" max={(debtor.totalCents / 100).toFixed(2)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required />
+                  <p className="mt-1 text-xs text-muted-foreground">Máximo: {formatCents(debtor.totalCents)}</p>
                 </div>
                 <div>
                   <Label htmlFor={`payment-date-${debtor.debtorId}`}>Data</Label>

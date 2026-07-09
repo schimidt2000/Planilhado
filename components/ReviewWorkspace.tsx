@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { TransactionReviewCard } from '@/components/TransactionReviewCard'
 import { toast } from 'sonner'
+import { validateTransactionDecision } from '@/lib/finance-rules'
 import type { TransactionWithMeta } from '@/lib/types'
 
 interface Session {
@@ -73,12 +74,28 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
   }, [])
 
   const handleDecision = useCallback(async (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => {
+    if (status === 'approved') {
+      const validationError = validateTransactionDecision({
+        amountCents: transaction.amountCents,
+        transactionType: transaction.transactionType,
+        debtorId: transaction.debtorId,
+        debtorName: transaction.debtorName,
+        splitMode: transaction.splitMode,
+        splits: transaction.splits,
+      })
+      if (validationError) {
+        toast.error(validationError)
+        return
+      }
+    }
+
     const response = await fetch(`/api/transactions/${transaction.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         status,
         transactionType: transaction.transactionType,
+        debtorId: transaction.debtorId,
         debtorName: transaction.debtorName,
         splitMode: transaction.splitMode,
         splits: transaction.splits,
@@ -105,6 +122,7 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
       id: t.id,
       status: t.status,
       transactionType: t.transactionType,
+      debtorId: t.debtorId,
       debtorName: t.debtorName,
       splitMode: t.splitMode,
       splits: t.splits,

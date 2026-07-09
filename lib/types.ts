@@ -26,6 +26,7 @@ export interface ParsedTransaction {
   rawLine?: string | null
   externalIdentifier?: string | null
   cardLastFour?: string | null
+  assignedDebtorId?: string | null
   assignedDebtorName?: string | null
 }
 
@@ -38,6 +39,7 @@ export interface ParseResult {
 export interface TransactionReview {
   status?: TransactionStatus
   transactionType?: TransactionType | null
+  debtorId?: string | null
   debtorName?: string | null
   splitMode?: SplitMode
   splits?: TransactionSplitInput[]
@@ -50,6 +52,7 @@ export interface TransactionReview {
 }
 
 export interface TransactionSplitInput {
+  debtorId?: string | null
   debtorName: string
   amountCents: number
 }
@@ -57,6 +60,7 @@ export interface TransactionSplitInput {
 export interface SuggestionResult {
   category?: string
   subcategory?: string
+  debtorId?: string | null
   debtorName?: string
   transactionType?: TransactionType
   confidence: 'high' | 'medium' | 'low'
@@ -99,6 +103,7 @@ export interface TransactionWithMeta {
   cardLastFour?: string | null
   status: string
   transactionType?: string | null
+  debtorId?: string | null
   debtorName?: string | null
   splitMode: SplitMode
   splits: TransactionSplitInput[]

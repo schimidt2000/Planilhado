@@ -5,7 +5,7 @@ export default async function MultiReviewPage({ searchParams }: { searchParams: 
   const { sessionIds } = await searchParams
   const ids = sessionIds?.split(',').map((id) => id.trim()).filter(Boolean) ?? []
 
-  if (ids.length === 0) redirect('/upload')
+  if (ids.length === 0) redirect('/imports')
 
   return <ReviewWorkspace sessionIds={ids} />
 }

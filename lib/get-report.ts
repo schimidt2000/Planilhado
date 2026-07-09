@@ -13,7 +13,12 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   const transactions = await prisma.transaction.findMany({
     where: { userId, status: 'approved', date: { gte: start, lte: end }, isCredit: false },
     orderBy: { date: 'asc' },
-    include: { splits: true },
+    include: {
+      debtor: { select: { id: true, name: true } },
+      splits: {
+        include: { debtor: { select: { id: true, name: true } } },
+      },
+    },
   })
 
   const receivableFor = (t: (typeof transactions)[number]) => {
@@ -81,14 +86,26 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     }
   })
 
-  const debtorMap: Record<string, number> = {}
+  const debtorMap = new Map<string, { debtorId: string | null; debtorName: string; owedCents: number }>()
+  const addDebtorAmount = (debtorId: string | null | undefined, debtorName: string | null | undefined, amountCents: number) => {
+    const name = debtorName?.trim()
+    if (!name || amountCents <= 0) return
+    const key = debtorId ? `id:${debtorId}` : `name:${name.toLowerCase()}`
+    const current = debtorMap.get(key)
+    debtorMap.set(key, {
+      debtorId: debtorId ?? current?.debtorId ?? null,
+      debtorName: current?.debtorName ?? name,
+      owedCents: (current?.owedCents ?? 0) + amountCents,
+    })
+  }
+
   for (const t of transactions) {
     if (t.splits.length > 0) {
       for (const split of t.splits) {
-        debtorMap[split.debtorName] = (debtorMap[split.debtorName] || 0) + split.amountCents
+        addDebtorAmount(split.debtorId, split.debtor?.name ?? split.debtorName, split.amountCents)
       }
-    } else if (t.transactionType === 'receivable' && t.debtorName) {
-      debtorMap[t.debtorName] = (debtorMap[t.debtorName] || 0) + t.amountCents
+    } else if (t.transactionType === 'receivable') {
+      addDebtorAmount(t.debtorId, t.debtor?.name ?? t.debtorName, t.amountCents)
     }
   }
   const debtors = await prisma.debtor.findMany({
@@ -101,18 +118,20 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     _sum: { amountCents: true },
   })
   const paidByDebtorId = new Map(payments.map((payment) => [payment.debtorId, payment._sum.amountCents ?? 0]))
-  const debtorContacts = new Map(debtors.map((debtor) => [debtor.name.toLowerCase(), debtor]))
+  const debtorContactsById = new Map(debtors.map((debtor) => [debtor.id, debtor]))
+  const debtorContactsByName = new Map(debtors.map((debtor) => [debtor.name.toLowerCase(), debtor]))
 
-  const byDebtor = Object.entries(debtorMap)
-    .map(([debtorName, owedCents]) => {
-      const contact = debtorContacts.get(debtorName.toLowerCase())
+  const byDebtor = Array.from(debtorMap.values())
+    .map(({ debtorId, debtorName, owedCents }) => {
+      const contact = debtorId ? debtorContactsById.get(debtorId) : debtorContactsByName.get(debtorName.toLowerCase())
       const paidCents = contact ? paidByDebtorId.get(contact.id) ?? 0 : 0
       const totalCents = Math.max(0, owedCents - paidCents)
+      const displayName = contact?.name ?? debtorName
       const whatsapp = contact?.whatsapp ?? null
-      const message = `Oi, ${debtorName}! Fechando as contas aqui: o saldo ficou em ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)} referente a ${month}.`
+      const message = `Oi, ${displayName}! Fechando as contas aqui: o saldo ficou em ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCents / 100)} referente a ${month}.`
       return {
         debtorId: contact?.id ?? null,
-        debtorName,
+        debtorName: displayName,
         totalCents,
         owedCents,
         paidCents,
@@ -181,10 +200,12 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
       cardLastFour: t.cardLastFour,
       status: t.status,
       transactionType: t.transactionType,
-      debtorName: t.debtorName,
+      debtorId: t.debtorId,
+      debtorName: t.debtor?.name ?? t.debtorName,
       splitMode: (t.splitMode as 'none' | 'equal' | 'custom') ?? 'none',
       splits: t.splits.map((split) => ({
-        debtorName: split.debtorName,
+        debtorId: split.debtorId,
+        debtorName: split.debtor?.name ?? split.debtorName,
         amountCents: split.amountCents,
       })),
       category: t.category,

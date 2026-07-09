@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CATEGORY_NAMES, getSubcategories } from '@/lib/categories'
+import { splitTotalCents, validateTransactionDecision } from '@/lib/finance-rules'
 import type { Debtor, SplitMode, TransactionSplitInput } from '@/lib/types'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -30,6 +31,7 @@ export function ManualTransactionForm() {
     amount: '',
     sourceType: 'pix',
     transactionType: 'expense',
+    debtorId: '',
     debtorName: '',
     splitMode: 'none' as SplitMode,
     category: '',
@@ -47,29 +49,60 @@ export function ManualTransactionForm() {
   }
 
   function setSplitMode(splitMode: SplitMode) {
-    patch({ splitMode, transactionType: 'expense', debtorName: '' })
-    if (splitMode !== 'none' && splits.length === 0) setSplits([{ debtorName: '', amountCents: 0 }])
+    patch({ splitMode, transactionType: 'expense', debtorId: '', debtorName: '' })
+    if (splitMode !== 'none' && splits.length === 0) setSplits([{ debtorId: null, debtorName: '', amountCents: 0 }])
   }
 
   function normalizedSplits(current: TransactionSplitInput[]) {
     if (form.splitMode !== 'equal') return current
-    const names = current.filter((item) => item.debtorName.trim())
+    const names = current.filter((item) => item.debtorId || item.debtorName.trim())
     const amountCents = Math.round(Number(form.amount || 0) * 100)
     const share = names.length > 0 ? Math.floor(amountCents / (names.length + 1)) : 0
-    return current.map((item) => ({ ...item, amountCents: item.debtorName.trim() ? share : 0 }))
+    return current.map((item) => ({ ...item, amountCents: item.debtorId || item.debtorName.trim() ? share : 0 }))
+  }
+
+  function setDebtor(value: string | null) {
+    if (!value || value === 'none') {
+      patch({ debtorId: '', debtorName: '' })
+      return
+    }
+    const debtor = debtors.find((item) => item.id === value)
+    patch({ debtorId: debtor?.id ?? '', debtorName: debtor?.name ?? '' })
+  }
+
+  function splitDebtorPatch(value: string | null): Partial<TransactionSplitInput> {
+    if (!value || value === 'none') return { debtorId: null, debtorName: '' }
+    const debtor = debtors.find((item) => item.id === value)
+    return { debtorId: debtor?.id ?? null, debtorName: debtor?.name ?? '' }
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
+    const amountCents = Math.round(Number(form.amount) * 100)
+    const preparedSplits = form.splitMode === 'none' ? [] : normalizedSplits(splits)
+    const validationError = validateTransactionDecision({
+      amountCents,
+      transactionType: form.transactionType,
+      debtorId: form.debtorId,
+      debtorName: form.debtorName,
+      splitMode: form.splitMode,
+      splits: preparedSplits,
+    })
+    if (validationError) {
+      toast.error(validationError)
+      return
+    }
+
     setSaving(true)
     const response = await fetch('/api/transactions/manual', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...form,
-        amountCents: Math.round(Number(form.amount) * 100),
+        amountCents,
+        debtorId: form.transactionType === 'receivable' ? form.debtorId : null,
         debtorName: form.transactionType === 'receivable' ? form.debtorName : null,
-        splits: form.splitMode === 'none' ? [] : normalizedSplits(splits),
+        splits: preparedSplits,
       }),
     })
     setSaving(false)
@@ -136,6 +169,8 @@ export function ManualTransactionForm() {
             onValueChange={(transactionType) => patch({
               transactionType: transactionType || 'expense',
               splitMode: transactionType === 'receivable' ? 'none' : form.splitMode,
+              debtorId: transactionType === 'receivable' ? form.debtorId : '',
+              debtorName: transactionType === 'receivable' ? form.debtorName : '',
             })}
           >
             <SelectTrigger>
@@ -149,8 +184,16 @@ export function ManualTransactionForm() {
         </div>
         {form.transactionType === 'receivable' ? (
           <div className="space-y-1.5">
-            <Label htmlFor="manual-debtor">Devedor</Label>
-            <Input id="manual-debtor" list="manual-debtors" value={form.debtorName} onChange={(event) => patch({ debtorName: event.target.value })} required />
+            <Label>Devedor</Label>
+            <Select value={form.debtorId || 'none'} onValueChange={setDebtor}>
+              <SelectTrigger>
+                <SelectValue>{form.debtorName || 'Selecione'}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Selecione</SelectItem>
+                {debtors.map((debtor) => <SelectItem key={debtor.id} value={debtor.id}>{debtor.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -182,18 +225,24 @@ export function ManualTransactionForm() {
               <p className="text-sm font-medium">Pessoas no rateio</p>
               <p className="text-xs text-muted-foreground">{form.splitMode === 'equal' ? 'A divisão considera você e as pessoas abaixo.' : 'Informe a parte de cada pessoa.'}</p>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => setSplits((current) => [...current, { debtorName: '', amountCents: 0 }])}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setSplits((current) => [...current, { debtorId: null, debtorName: '', amountCents: 0 }])}>
               <Plus className="size-4" /> Pessoa
             </Button>
           </div>
           {splits.map((split, index) => (
             <div key={index} className="grid gap-2 sm:grid-cols-[1fr_150px_40px]">
-              <Input
-                list="manual-debtors"
-                placeholder="Nome"
-                value={split.debtorName}
-                onChange={(event) => setSplits((current) => normalizedSplits(current.map((item, itemIndex) => itemIndex === index ? { ...item, debtorName: event.target.value } : item)))}
-              />
+              <Select
+                value={split.debtorId || 'none'}
+                onValueChange={(value) => setSplits((current) => normalizedSplits(current.map((item, itemIndex) => itemIndex === index ? { ...item, ...splitDebtorPatch(value) } : item)))}
+              >
+                <SelectTrigger>
+                  <SelectValue>{split.debtorName || 'Pessoa'}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Selecione</SelectItem>
+                  {debtors.map((debtor) => <SelectItem key={debtor.id} value={debtor.id}>{debtor.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <Input
                 type="number" min="0" step="0.01"
                 disabled={form.splitMode === 'equal'}
@@ -208,7 +257,9 @@ export function ManualTransactionForm() {
         </div>
       )}
 
-      <datalist id="manual-debtors">{debtors.map((debtor) => <option key={debtor.id} value={debtor.name} />)}</datalist>
+      {form.transactionType === 'expense' && form.splitMode !== 'none' && splitTotalCents(normalizedSplits(splits)) > Math.round(Number(form.amount || 0) * 100) && (
+        <p className="text-sm text-destructive">O rateio não pode ser maior que o valor da compra.</p>
+      )}
       <div className="flex justify-end border-t pt-5">
         <Button type="submit" disabled={saving}>{saving ? 'Adicionando...' : 'Adicionar lançamento'}</Button>
       </div>

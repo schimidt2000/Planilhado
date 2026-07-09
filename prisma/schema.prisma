@@ -7,26 +7,28 @@ datasource db {
 }
 
 model User {
-  id           String          @id @default(cuid())
-  name         String
-  email        String          @unique
-  passwordHash String
-  createdAt    DateTime        @default(now())
-  sessions     ImportSession[]
-  transactions Transaction[]
-  debtors      Debtor[]
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  passwordHash   String
+  createdAt      DateTime        @default(now())
+  sessions       ImportSession[]
+  transactions   Transaction[]
+  debtors        Debtor[]
   debtorPayments DebtorPayment[]
 }
 
 model Debtor {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  whatsapp  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  payments  DebtorPayment[]
+  id           String             @id @default(cuid())
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  whatsapp     String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  payments     DebtorPayment[]
+  transactions Transaction[]      @relation("TransactionDebtor")
+  splits       TransactionSplit[] @relation("TransactionSplitDebtor")
 
   @@unique([userId, name])
   @@index([userId])
@@ -49,14 +51,23 @@ model DebtorPayment {
 }
 
 model ImportSession {
-  id           String        @id @default(cuid())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  month        String
-  source       String
-  inputType    String
-  createdAt    DateTime      @default(now())
-  transactions Transaction[]
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month          String
+  source         String
+  inputType      String
+  fileName       String?
+  fileSize       Int?
+  fileHash       String?
+  newCount       Int           @default(0)
+  completedCount Int           @default(0)
+  duplicateCount Int           @default(0)
+  createdAt      DateTime      @default(now())
+  transactions   Transaction[]
+
+  @@index([userId, month])
+  @@index([userId, fileHash])
 }
 
 model Transaction {
@@ -69,8 +80,8 @@ model Transaction {
   date                DateTime
   description         String
   amountCents         Int
-  isCredit            Boolean  @default(false)
-  isCharge            Boolean  @default(false)
+  isCredit            Boolean   @default(false)
+  isCharge            Boolean   @default(false)
   installmentCurrent  Int?
   installmentTotal    Int?
   currencyOriginal    String?
@@ -79,11 +90,13 @@ model Transaction {
   cardLastFour        String?
   rawLine             String?
   externalIdentifier  String?
-  origin              String        @default("imported")
+  origin              String    @default("imported")
   reconciledAt        DateTime?
 
   status          String             @default("pending")
   transactionType String?
+  debtorId        String?
+  debtor          Debtor?            @relation("TransactionDebtor", fields: [debtorId], references: [id], onDelete: SetNull)
   debtorName      String?
   splitMode       String             @default("none")
   category        String?
@@ -95,11 +108,12 @@ model Transaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([userId, sourceType, externalIdentifier])
   @@index([userId, importSessionId])
   @@index([userId, date])
   @@index([userId, status, description])
   @@index([userId, cardLastFour])
-  @@unique([userId, sourceType, externalIdentifier])
+  @@index([userId, debtorId])
 }
 
 model TransactionSplit {
@@ -107,11 +121,14 @@ model TransactionSplit {
   transactionId String
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   userId        String
+  debtorId      String?
+  debtor        Debtor?     @relation("TransactionSplitDebtor", fields: [debtorId], references: [id], onDelete: SetNull)
   debtorName    String
   amountCents   Int
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([userId, debtorName])
+  @@index([userId, debtorId])
   @@index([transactionId])
 }
