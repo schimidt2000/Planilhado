@@ -1,11 +1,17 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
 import path from 'path'
 import type { ParseResult } from './types'
 
+function resolvePythonPath() {
+  const railwayVenv = '/opt/venv/bin/python'
+  if (existsSync(railwayVenv)) return railwayVenv
+  return process.env.PYTHON_PATH || 'python3'
+}
+
 export async function parsePDF(fileBuffer: Buffer, password?: string): Promise<ParseResult> {
   return new Promise((resolve, reject) => {
-    // Nixpacks exposes its Python virtualenv on PATH as `python`.
-    const pythonPath = process.env.PYTHON_PATH || 'python'
+    const pythonPath = resolvePythonPath()
     const scriptPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'scripts', 'parse_pdf.py')
 
     const args = [scriptPath]
