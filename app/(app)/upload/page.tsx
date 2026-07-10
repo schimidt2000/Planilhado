@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { formatCents } from '@/lib/format'
+import { currentMonth, formatCents, formatMonth } from '@/lib/format'
 import { toast } from 'sonner'
 import type { Debtor, ImportPreviewItem, ImportSource, InputType, ParseResult } from '@/lib/types'
 
@@ -28,6 +28,7 @@ interface PreparedFile {
   input: QueuedFile
   source: ImportSource
   month: string
+  parsedMonth: string
   fileHash: string
   preview: ImportPreviewItem[]
 }
@@ -48,6 +49,7 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('')
   const [debtors, setDebtors] = useState<Debtor[]>([])
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth())
 
   useEffect(() => {
     fetch('/api/debtors')
@@ -94,15 +96,16 @@ export default function UploadPage() {
     const previewResponse = await fetch('/api/import-sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...result, inputType: input.inputType, previewOnly: true }),
+      body: JSON.stringify({ ...result, month: selectedMonth, inputType: input.inputType, previewOnly: true }),
     })
     const previewData = await previewResponse.json()
     if (!previewResponse.ok) throw new Error(previewData.error || 'Erro ao comparar lançamentos')
-    return { input, source: result.source, month: result.month, fileHash, preview: previewData.preview }
+    return { input, source: result.source, month: selectedMonth, parsedMonth: result.month, fileHash, preview: previewData.preview }
   }
 
   async function analyze(event: React.FormEvent) {
     event.preventDefault()
+    if (!/^\d{4}-\d{2}$/.test(selectedMonth)) return toast.error('Escolha o mês da planilha antes de importar')
     if (files.length === 0) return toast.error('Selecione pelo menos um arquivo PDF ou CSV')
     setState('parsing')
     setProgress(5)
@@ -181,6 +184,7 @@ export default function UploadPage() {
     complete: allItems.filter((item) => item.action === 'complete').length,
     duplicate: allItems.filter((item) => item.action === 'duplicate').length,
   }
+  const selectedMonthLabel = /^\d{4}-\d{2}$/.test(selectedMonth) ? formatMonth(selectedMonth) : 'Escolha um mês'
 
   if (state === 'preview' || state === 'saving') {
     return (
@@ -206,7 +210,13 @@ export default function UploadPage() {
             <Card key={file.input.id}>
               <CardHeader className="pb-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><CardTitle className="text-base">{file.input.file.name}</CardTitle><CardDescription>{file.month} · {file.preview.length} movimentações</CardDescription></div>
+                  <div>
+                    <CardTitle className="text-base">{file.input.file.name}</CardTitle>
+                    <CardDescription>
+                      Planilha: {formatMonth(file.month)} · {file.preview.length} movimentações
+                      {file.parsedMonth !== file.month ? ` · arquivo indica ${formatMonth(file.parsedMonth)}` : ''}
+                    </CardDescription>
+                  </div>
                   <Badge variant="outline">{file.source}</Badge>
                 </div>
               </CardHeader>
@@ -232,7 +242,7 @@ export default function UploadPage() {
                                 <SelectTrigger><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">Não associar</SelectItem>
-                                  {debtors.map((debtor) => <SelectItem key={debtor.id} value={debtor.name}>{debtor.name}</SelectItem>)}
+                                  {debtors.map((debtor) => <SelectItem key={debtor.id} value={debtor.id}>{debtor.name}</SelectItem>)}
                                 </SelectContent>
                               </Select>
                             </div>
@@ -283,9 +293,31 @@ export default function UploadPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Importar arquivos</h1>
-        <p className="mt-1 text-muted-foreground">Envie PDFs ou CSVs. Antes de salvar, você verá novos gastos, conciliações e duplicidades.</p>
+        <p className="mt-1 text-muted-foreground">Escolha o mês da planilha e envie PDFs ou CSVs. Antes de salvar, você verá novos gastos, conciliações e duplicidades.</p>
       </div>
       <form onSubmit={analyze} className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Mês da planilha</CardTitle>
+            <CardDescription>Todos os arquivos desta importação serão lançados neste mês.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 sm:grid-cols-[220px_1fr] sm:items-center">
+            <div className="space-y-1.5">
+              <Label htmlFor="import-month">Mês</Label>
+              <Input
+                id="import-month"
+                type="month"
+                value={selectedMonth}
+                onChange={(event) => setSelectedMonth(event.target.value)}
+                required
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Selecionado: <span className="font-medium text-foreground">{selectedMonthLabel}</span>
+            </p>
+          </CardContent>
+        </Card>
+
         <div className="grid gap-4 md:grid-cols-2">
           {([
             ['fatura', 'Faturas do cartão', 'Nubank, Inter ou PicPay'],

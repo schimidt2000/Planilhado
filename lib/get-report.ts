@@ -7,11 +7,13 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   const [year, mon] = month.split('-').map(Number)
   if (!year || !mon) return null
 
-  const start = new Date(year, mon - 1, 1)
-  const end = new Date(year, mon, 0, 23, 59, 59, 999)
-
   const transactions = await prisma.transaction.findMany({
-    where: { userId, status: 'approved', date: { gte: start, lte: end }, isCredit: false },
+    where: {
+      userId,
+      status: 'approved',
+      isCredit: false,
+      importSession: { month },
+    },
     orderBy: { date: 'asc' },
     include: {
       debtor: { select: { id: true, name: true } },
@@ -146,16 +148,14 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   const monthlyTrend = []
   for (let i = 5; i >= 0; i--) {
     const d = new Date(year, mon - 1 - i, 1)
-    const tStart = new Date(d.getFullYear(), d.getMonth(), 1)
-    const tEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999)
     const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
     const mTxs = await prisma.transaction.findMany({
       where: {
         userId,
         status: 'approved',
-        date: { gte: tStart, lte: tEnd },
         isCredit: false,
+        importSession: { month: mStr },
       },
       select: { amountCents: true, transactionType: true, splits: { select: { amountCents: true } } },
     })
