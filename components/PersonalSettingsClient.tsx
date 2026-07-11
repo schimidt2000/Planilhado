@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Bell, CalendarDays, Check, Eye, EyeOff, Plus, Trash2, TrendingUp, Wallet } from 'lucide-react'
+import { Bell, CalendarDays, Check, Plus, Trash2, TrendingUp, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { currentMonth, formatCents, formatMonth } from '@/lib/format'
 import { getUpcomingBillReminders } from '@/lib/finance-settings-utils'
-import type { BillReminderDTO, ExtraIncomeDTO, FinanceSettingsSnapshot, SalaryEntryDTO, UserPreferences } from '@/lib/types'
+import type { BillReminderDTO, ExtraIncomeDTO, FinanceSettingsSnapshot, SalaryEntryDTO } from '@/lib/types'
 
 const SOURCE_LABELS: Record<string, string> = {
   nubank: 'Nubank',
@@ -20,12 +20,6 @@ const SOURCE_LABELS: Record<string, string> = {
   pix: 'Pix / conta',
   manual: 'Outro',
 }
-
-const TIP_LABELS: { key: keyof UserPreferences; label: string; description: string }[] = [
-  { key: 'showDashboardTips', label: 'Dashboard', description: 'Cards de próximos passos e atalhos no início.' },
-  { key: 'showReviewTips', label: 'Revisão de gastos', description: 'Lembretes sobre filtros, rateio e aprovação.' },
-  { key: 'showUploadTips', label: 'Importação', description: 'Orientações antes de enviar PDF ou CSV.' },
-]
 
 function today() {
   return new Date().toISOString().slice(0, 10)
@@ -211,26 +205,12 @@ export function PersonalSettingsClient({ initialSettings }: { initialSettings: F
     await refreshSettings()
   }
 
-  async function updatePreference(key: keyof UserPreferences, value: boolean) {
-    const nextPreferences = { ...settings.preferences, [key]: value }
-    setSettings((current) => ({ ...current, preferences: nextPreferences }))
-    const response = await fetch('/api/settings/preferences', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [key]: value }),
-    })
-    if (!response.ok) {
-      toast.error('Não foi possível atualizar as dicas')
-      await refreshSettings()
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Configurações pessoais</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Organize renda, faturas e preferências para o dashboard ficar mais útil no dia a dia.
+          Organize renda e vencimentos para o dashboard ficar mais útil no dia a dia.
         </p>
       </div>
 
@@ -425,33 +405,6 @@ export function PersonalSettingsClient({ initialSettings }: { initialSettings: F
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Dicas interativas</CardTitle>
-          <CardDescription>Você pode esconder as dicas em cada tela e religar por aqui quando quiser.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-3">
-          {TIP_LABELS.map((tip) => {
-            const enabled = settings.preferences[tip.key]
-            return (
-              <div key={tip.key} className="rounded-lg border p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{tip.label}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{tip.description}</p>
-                  </div>
-                  <Badge variant={enabled ? 'outline' : 'secondary'}>{enabled ? 'Ligadas' : 'Ocultas'}</Badge>
-                </div>
-                <Button className="mt-3 w-full" variant="outline" size="sm" onClick={() => updatePreference(tip.key, !enabled)}>
-                  {enabled ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                  {enabled ? 'Ocultar' : 'Mostrar'}
-                </Button>
-              </div>
-            )
-          })}
         </CardContent>
       </Card>
     </div>

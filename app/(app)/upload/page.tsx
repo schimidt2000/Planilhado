@@ -10,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { GuidanceCards } from '@/components/GuidanceCards'
 import { currentMonth, formatCents, formatMonth } from '@/lib/format'
 import { toast } from 'sonner'
 import type { Debtor, ImportPreviewItem, ImportSource, InputType, ParseResult } from '@/lib/types'
@@ -296,7 +295,6 @@ export default function UploadPage() {
         <h1 className="text-2xl font-bold">Importar arquivos</h1>
         <p className="mt-1 text-muted-foreground">Escolha o mês da planilha e envie PDFs ou CSVs. Antes de salvar, você verá novos gastos, conciliações e duplicidades.</p>
       </div>
-      <GuidanceCards scope="upload" />
       <form onSubmit={analyze} className="space-y-4">
         <Card>
           <CardHeader className="pb-3">

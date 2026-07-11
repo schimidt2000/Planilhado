@@ -21,6 +21,21 @@ export async function PATCH(
   if (!tx) return notFound('Transação')
   if (tx.userId !== userId) return forbidden()
 
+  const nextAmountCents = body.amountCents !== undefined ? Math.round(Number(body.amountCents)) : tx.amountCents
+  if (body.amountCents !== undefined && (!Number.isFinite(nextAmountCents) || nextAmountCents <= 0)) {
+    return error('Informe um valor maior que zero', 422)
+  }
+
+  const nextDate = body.date !== undefined ? new Date(`${body.date}T12:00:00.000Z`) : tx.date
+  if (body.date !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(body.date) || Number.isNaN(nextDate.getTime()))) {
+    return error('Informe uma data válida', 422)
+  }
+
+  const nextDescription = body.description !== undefined ? body.description.trim().replace(/\s+/g, ' ') : tx.description
+  if (body.description !== undefined && nextDescription.length < 2) {
+    return error('Informe uma descrição com pelo menos 2 caracteres', 422)
+  }
+
   const nextSplits = body.splits ?? tx.splits.map((split) => ({
     debtorId: split.debtorId,
     debtorName: split.debtorName,
@@ -31,9 +46,9 @@ export async function PATCH(
   const nextDebtorName = body.debtorName !== undefined ? body.debtorName : tx.debtorName
   const nextSplitMode = body.splitMode !== undefined ? body.splitMode : tx.splitMode
 
-  if (body.status === 'approved') {
+  if (body.status === 'approved' || (body.status === undefined && tx.status === 'approved')) {
     const validationError = validateTransactionDecision({
-      amountCents: tx.amountCents,
+      amountCents: nextAmountCents,
       transactionType: nextTransactionType,
       debtorId: nextDebtorId,
       debtorName: nextDebtorName,
@@ -58,6 +73,9 @@ export async function PATCH(
     where: { id },
     data: {
       ...(body.status !== undefined && { status: body.status }),
+      ...(body.date !== undefined && { date: nextDate }),
+      ...(body.description !== undefined && { description: nextDescription }),
+      ...(body.amountCents !== undefined && { amountCents: nextAmountCents }),
       ...(body.transactionType !== undefined && { transactionType: body.transactionType }),
       ...(body.transactionType === 'expense' && { debtorId: null, debtorName: null }),
       ...(debtor && body.transactionType !== 'expense' && { debtorId: debtor.debtorId, debtorName: debtor.debtorName }),

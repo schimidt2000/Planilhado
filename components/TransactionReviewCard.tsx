@@ -16,6 +16,7 @@ import type { Debtor, SplitMode, TransactionSplitInput, TransactionWithMeta, Sug
 interface Props {
   transaction: TransactionWithMeta
   linkedCharges?: TransactionWithMeta[]
+  linkedRefunds?: TransactionWithMeta[]
   onChange: (id: string, patch: Partial<TransactionWithMeta>) => void
   onDecide: (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => Promise<void>
 }
@@ -28,11 +29,13 @@ const SOURCE_LABELS: Record<string, string> = {
   manual: 'Manual',
 }
 
-export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onChange, onDecide }: Props) {
+export function TransactionReviewCard({ transaction: tx, linkedCharges = [], linkedRefunds = [], onChange, onDecide }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [suggestion, setSuggestion] = useState<SuggestionResult | null>(null)
   const [suggestionLoading, setSuggestionLoading] = useState(false)
   const [debtors, setDebtors] = useState<Debtor[]>([])
+  const linkedRefundsTotal = linkedRefunds.reduce((sum, refund) => sum + refund.amountCents, 0)
+  const netAmountCents = Math.max(0, tx.amountCents - linkedRefundsTotal)
 
   const fetchSuggestion = useCallback(async () => {
     if (suggestionLoading) return
@@ -97,7 +100,7 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
     if (splitMode !== 'equal') return splits
     const named = splits.filter((split) => split.debtorId || split.debtorName.trim())
     if (named.length === 0) return splits.map((split) => ({ ...split, amountCents: 0 }))
-    const equalShare = Math.floor(tx.amountCents / (named.length + 1))
+    const equalShare = Math.floor(netAmountCents / (named.length + 1))
     return splits.map((split) => ({
       ...split,
       amountCents: split.debtorId || split.debtorName.trim() ? equalShare : 0,
@@ -144,14 +147,14 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
   }
 
   const splitTotal = splitTotalCents(tx.splits)
-  const approvalError = validateTransactionDecision({
-    amountCents: tx.amountCents,
+  const approvalError = netAmountCents > 0 ? validateTransactionDecision({
+    amountCents: netAmountCents,
     transactionType: tx.transactionType,
     debtorId: tx.debtorId,
     debtorName: tx.debtorName,
     splitMode: tx.splitMode,
     splits: tx.splits,
-  })
+  }) : null
   const linkedChargesTotal = linkedCharges.reduce((sum, charge) => sum + charge.amountCents, 0)
 
   return (
@@ -166,6 +169,11 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
               {linkedCharges.length > 0 && (
                 <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
                   IOF +{formatCents(linkedChargesTotal)}
+                </Badge>
+              )}
+              {linkedRefunds.length > 0 && (
+                <Badge variant="outline" className="text-xs border-emerald-400 text-emerald-700">
+                  {netAmountCents === 0 ? 'Estornado' : `Estorno -${formatCents(linkedRefundsTotal)}`}
                 </Badge>
               )}
               {tx.installmentCurrent && tx.installmentTotal && (
@@ -184,9 +192,16 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-2">
-            <span className={`font-bold text-sm ${tx.isCredit ? 'text-green-600' : ''}`}>
-              {tx.isCredit ? '-' : ''}{formatCents(tx.amountCents)}
-            </span>
+            <div className="text-right">
+              <span className={`block font-bold text-sm ${tx.isCredit || linkedRefunds.length > 0 ? 'text-green-600' : ''}`}>
+                {tx.isCredit ? '-' : ''}{formatCents(tx.isCredit ? tx.amountCents : netAmountCents)}
+              </span>
+              {linkedRefunds.length > 0 && (
+                <span className="block text-[11px] text-muted-foreground">
+                  {formatCents(tx.amountCents)} - {formatCents(linkedRefundsTotal)} estorno
+                </span>
+              )}
+            </div>
             <Button size="icon-sm" variant="ghost" title={expanded ? 'Recolher detalhes' : 'Revisar gasto'} onClick={() => setExpanded((value) => !value)}>
               {expanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
             </Button>
@@ -209,6 +224,27 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {linkedRefunds.length > 0 && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xs font-medium text-emerald-900">Estorno vinculado automaticamente</p>
+                <div className="mt-2 space-y-1 text-xs text-emerald-900">
+                  {linkedRefunds.map((refund) => (
+                    <div key={refund.id} className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        {new Date(refund.date).toLocaleDateString('pt-BR')} · {refund.description}
+                      </span>
+                      <span className="shrink-0 font-medium">-{formatCents(refund.amountCents)}</span>
+                    </div>
+                  ))}
+                </div>
+                {netAmountCents === 0 && (
+                  <p className="mt-2 text-xs text-emerald-800">
+                    Estorno integral: após aprovar, este item não entra nos gastos do mês.
+                  </p>
+                )}
               </div>
             )}
 
@@ -398,7 +434,7 @@ export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onC
 
                 <div className="flex flex-wrap gap-3 text-xs">
                   <span className="text-muted-foreground">A receber: {formatCents(splitTotal)}</span>
-                  <span className="text-muted-foreground">Sua parte: {formatCents(Math.max(0, tx.amountCents - splitTotal))}</span>
+                  <span className="text-muted-foreground">Sua parte: {formatCents(Math.max(0, netAmountCents - splitTotal))}</span>
                   {approvalError && <span className="text-destructive">{approvalError}</span>}
                 </div>
               </div>

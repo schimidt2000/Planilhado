@@ -37,6 +37,9 @@ export interface ParseResult {
 }
 
 export interface TransactionReview {
+  date?: string
+  description?: string
+  amountCents?: number
   status?: TransactionStatus
   transactionType?: TransactionType | null
   debtorId?: string | null
@@ -148,6 +151,8 @@ export interface TransactionWithMeta {
   date: string
   description: string
   amountCents: number
+  grossAmountCents?: number
+  refundedCents?: number
   isCredit: boolean
   isCharge: boolean
   installmentCurrent?: number | null
@@ -169,6 +174,12 @@ export interface TransactionWithMeta {
   importSessionId: string
   origin?: string
   reconciledAt?: string | null
+  refunds?: {
+    id: string
+    date: string
+    description: string
+    amountCents: number
+  }[]
 }
 
 export type ReconciliationAction = 'new' | 'complete' | 'duplicate'

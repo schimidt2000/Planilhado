@@ -146,6 +146,11 @@ export function PrintableReport({ report }: Props) {
                   <span className={t.transactionType === 'receivable' ? 'text-green-600' : ''}>
                     {formatCents(t.amountCents)}
                   </span>
+                  {t.refundedCents ? (
+                    <span className="block text-xs font-normal text-green-700">
+                      {formatCents(t.grossAmountCents ?? t.amountCents)} - {formatCents(t.refundedCents)} estorno
+                    </span>
+                  ) : null}
                 </td>
               </tr>
             ))}

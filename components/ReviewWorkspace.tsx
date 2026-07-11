@@ -13,12 +13,13 @@ import { toast } from 'sonner'
 import { validateTransactionDecision } from '@/lib/finance-rules'
 import {
   buildChargeGroups,
+  buildRefundGroups,
   buildLinkedChargeUpdate,
+  buildLinkedRefundUpdate,
   buildReviewUpdate,
   compareReviewTransactions,
   type ReviewSortMode,
 } from '@/lib/review-queue'
-import { GuidanceCards } from '@/components/GuidanceCards'
 import type { TransactionWithMeta } from '@/lib/types'
 
 interface Session {
@@ -41,7 +42,7 @@ const SORT_LABELS: Record<ReviewSortMode, string> = {
   source: 'Fonte',
 }
 
-export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds: string[]; tipsEnabled?: boolean }) {
+export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
   const router = useRouter()
 
   const [sessions, setSessions] = useState<Session[]>([])
@@ -94,6 +95,7 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
   }, [])
 
   const chargeGroups = useMemo(() => buildChargeGroups(transactions), [transactions])
+  const refundGroups = useMemo(() => buildRefundGroups(transactions), [transactions])
 
   const sourceOptions = useMemo(() => {
     return Array.from(new Set(transactions.map((transaction) => transaction.sourceType)))
@@ -103,32 +105,44 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
   const visibleTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => !chargeGroups.groupedChargeIds.has(transaction.id))
+      .filter((transaction) => !refundGroups.groupedRefundIds.has(transaction.id))
       .filter((transaction) => sourceFilter === 'all' || transaction.sourceType === sourceFilter)
       .sort((a, b) => compareReviewTransactions(sortMode, a, b))
-  }, [chargeGroups, sourceFilter, sortMode, transactions])
+  }, [chargeGroups, refundGroups, sourceFilter, sortMode, transactions])
 
   const groupedChargeCount = chargeGroups.groupedChargeIds.size
+  const groupedRefundCount = refundGroups.groupedRefundIds.size
 
   const handleDecision = useCallback(async (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => {
+    const linkedRefunds = refundGroups.linkedRefundsByParentId.get(transaction.id) ?? []
+    const refundedCents = refundGroups.refundedCentsByParentId.get(transaction.id) ?? 0
+    const effectiveAmountCents = Math.max(0, transaction.amountCents - refundedCents)
+    const reviewTransaction = status === 'approved' && effectiveAmountCents === 0
+      ? { ...transaction, transactionType: 'expense', debtorId: null, debtorName: null, splitMode: 'none' as const, splits: [] }
+      : transaction
+
     if (status === 'approved') {
-      const validationError = validateTransactionDecision({
-        amountCents: transaction.amountCents,
-        transactionType: transaction.transactionType,
-        debtorId: transaction.debtorId,
-        debtorName: transaction.debtorName,
-        splitMode: transaction.splitMode,
-        splits: transaction.splits,
-      })
-      if (validationError) {
-        toast.error(validationError)
-        return
+      if (effectiveAmountCents > 0) {
+        const validationError = validateTransactionDecision({
+          amountCents: effectiveAmountCents,
+          transactionType: transaction.transactionType,
+          debtorId: transaction.debtorId,
+          debtorName: transaction.debtorName,
+          splitMode: transaction.splitMode,
+          splits: transaction.splits,
+        })
+        if (validationError) {
+          toast.error(validationError)
+          return
+        }
       }
     }
 
     const linkedCharges = chargeGroups.linkedChargesByParentId.get(transaction.id) ?? []
     const updates = [
-      buildReviewUpdate(transaction, status),
-      ...linkedCharges.map((charge) => buildLinkedChargeUpdate(transaction, charge, status)),
+      buildReviewUpdate(reviewTransaction, status),
+      ...linkedCharges.map((charge) => buildLinkedChargeUpdate(reviewTransaction, charge, status)),
+      ...linkedRefunds.map((refund) => buildLinkedRefundUpdate(reviewTransaction, refund, status)),
     ]
 
     const response = await fetch('/api/transactions/batch-review', {
@@ -143,9 +157,12 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
     const decidedIds = new Set(updates.map((item) => item.id))
     setTransactions((current) => current.filter((item) => !decidedIds.has(item.id)))
     setDecided((current) => ({ ...current, [status]: current[status] + updates.length }))
-    const suffix = linkedCharges.length > 0 ? ` com ${linkedCharges.length} IOF vinculado(s)` : ''
+    const suffixParts = []
+    if (linkedCharges.length > 0) suffixParts.push(`${linkedCharges.length} IOF vinculado(s)`)
+    if (linkedRefunds.length > 0) suffixParts.push(`${linkedRefunds.length} estorno(s) vinculado(s)`)
+    const suffix = suffixParts.length > 0 ? ` com ${suffixParts.join(' e ')}` : ''
     toast.success(status === 'approved' ? `Gasto aprovado${suffix}` : `Gasto recusado${suffix}`)
-  }, [chargeGroups])
+  }, [chargeGroups, refundGroups])
 
   async function handleSave() {
     setSaving(true)
@@ -211,8 +228,6 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
         ))}
       </div>
 
-      <GuidanceCards scope="review" initialEnabled={tipsEnabled} />
-
       <div className="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         <div className="space-y-1">
           <Label className="text-xs">Filtrar fonte</Label>
@@ -247,6 +262,7 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
           <SlidersHorizontal className="size-4" />
           <span>{visibleTransactions.length} visível(is)</span>
           {groupedChargeCount > 0 && <span>· {groupedChargeCount} IOF agrupado(s)</span>}
+          {groupedRefundCount > 0 && <span>· {groupedRefundCount} estorno(s) agrupado(s)</span>}
         </div>
       </div>
 
@@ -269,6 +285,7 @@ export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds
             key={tx.id}
             transaction={tx}
             linkedCharges={chargeGroups.linkedChargesByParentId.get(tx.id) ?? []}
+            linkedRefunds={refundGroups.linkedRefundsByParentId.get(tx.id) ?? []}
             onChange={handleChange}
             onDecide={handleDecision}
           />

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FileText, Plus, TrendingUp } from 'lucide-react'
+import { FileText, Plus, ReceiptText, TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +11,6 @@ import { SpendingDonut } from './charts/SpendingDonut'
 import { MonthlyTrend } from './charts/MonthlyTrend'
 import { DebtorBar } from './charts/DebtorBar'
 import { DebtorReceivables } from './DebtorReceivables'
-import { GuidanceCards } from './GuidanceCards'
 import type { FinanceSettingsSnapshot, MonthlyReport } from '@/lib/types'
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -54,13 +53,14 @@ export function MonthlyDashboard({ report, month, settings }: Props) {
           <Link href="/upload">
             <Button size="sm" className="flex-1 sm:flex-none"><Plus className="size-4" /> Importar</Button>
           </Link>
+          <Link href={`/expenses?m=${month}`}>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none"><ReceiptText className="size-4" /> Gastos</Button>
+          </Link>
           <Link href={`/report/${month}`}>
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none"><FileText className="size-4" /> Relatório</Button>
           </Link>
         </div>
       </div>
-
-      <GuidanceCards scope="dashboard" initialEnabled={settings.preferences.showDashboardTips} />
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>

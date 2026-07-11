@@ -1,17 +1,157 @@
 import { prisma } from '@/lib/db'
 import { BUDGET_GROUPS, getBudgetGroup } from '@/lib/categories'
-import type { MonthlyReport } from '@/lib/types'
+import { buildRefundGroups } from '@/lib/review-queue'
+import type { MonthlyReport, SplitMode, TransactionSplitInput, TransactionWithMeta } from '@/lib/types'
 import { buildWhatsAppUrl } from './whatsapp'
+
+type ReportTransactionRecord = {
+  id: string
+  date: Date
+  description: string
+  amountCents: number
+  isCredit: boolean
+  isCharge: boolean
+  installmentCurrent: number | null
+  installmentTotal: number | null
+  currencyOriginal: string | null
+  amountOriginalCents: number | null
+  sourceType: string
+  cardLastFour: string | null
+  status: string
+  transactionType: string | null
+  debtorId: string | null
+  debtorName: string | null
+  splitMode: string
+  category: string | null
+  subcategory: string | null
+  notes: string | null
+  isEssential: boolean | null
+  importSessionId: string
+  origin?: string
+  reconciledAt?: Date | null
+  debtor?: { id: string; name: string } | null
+  splits: {
+    debtorId: string | null
+    debtorName: string
+    amountCents: number
+    debtor?: { id: string; name: string } | null
+  }[]
+}
+
+function dateString(date: Date): string {
+  return date.toISOString().split('T')[0]
+}
+
+function normalizeSplitMode(value: string | null | undefined): SplitMode {
+  return value === 'equal' || value === 'custom' ? value : 'none'
+}
+
+function serializeTransaction(t: ReportTransactionRecord): TransactionWithMeta {
+  return {
+    id: t.id,
+    date: dateString(t.date),
+    description: t.description,
+    amountCents: t.amountCents,
+    isCredit: t.isCredit,
+    isCharge: t.isCharge,
+    installmentCurrent: t.installmentCurrent,
+    installmentTotal: t.installmentTotal,
+    currencyOriginal: t.currencyOriginal,
+    amountOriginalCents: t.amountOriginalCents,
+    sourceType: t.sourceType,
+    cardLastFour: t.cardLastFour,
+    status: t.status,
+    transactionType: t.transactionType,
+    debtorId: t.debtorId,
+    debtorName: t.debtor?.name ?? t.debtorName,
+    splitMode: normalizeSplitMode(t.splitMode),
+    splits: t.splits.map((split) => ({
+      debtorId: split.debtorId,
+      debtorName: split.debtor?.name ?? split.debtorName,
+      amountCents: split.amountCents,
+    })),
+    category: t.category,
+    subcategory: t.subcategory,
+    notes: t.notes,
+    isEssential: t.isEssential,
+    importSessionId: t.importSessionId,
+    origin: t.origin,
+    reconciledAt: t.reconciledAt ? t.reconciledAt.toISOString() : null,
+  }
+}
+
+function scaleSplitsForNetAmount(
+  splits: TransactionSplitInput[],
+  grossAmountCents: number,
+  netAmountCents: number
+): TransactionSplitInput[] {
+  const positiveSplits = splits.filter((split) => Math.round(Number(split.amountCents) || 0) > 0)
+  if (positiveSplits.length === 0 || grossAmountCents <= 0 || netAmountCents <= 0) return []
+  if (netAmountCents >= grossAmountCents) return positiveSplits
+
+  const scaled = positiveSplits.map((split) => ({
+    debtorId: split.debtorId,
+    debtorName: split.debtorName,
+    amountCents: Math.max(0, Math.round((split.amountCents * netAmountCents) / grossAmountCents)),
+  }))
+
+  let total = scaled.reduce((sum, split) => sum + split.amountCents, 0)
+  for (let index = scaled.length - 1; total > netAmountCents && index >= 0; index -= 1) {
+    const reduction = Math.min(scaled[index].amountCents, total - netAmountCents)
+    scaled[index].amountCents -= reduction
+    total -= reduction
+  }
+
+  return scaled.filter((split) => split.amountCents > 0)
+}
+
+function prepareReportTransactions(records: ReportTransactionRecord[]): TransactionWithMeta[] {
+  const allTransactions = records.map(serializeTransaction)
+  const refundGroups = buildRefundGroups(allTransactions)
+
+  return allTransactions
+    .filter((transaction) => !transaction.isCredit)
+    .map((transaction) => {
+      const refundedCents = refundGroups.refundedCentsByParentId.get(transaction.id) ?? 0
+      const netAmountCents = Math.max(0, transaction.amountCents - refundedCents)
+      const linkedRefunds = refundGroups.linkedRefundsByParentId.get(transaction.id) ?? []
+
+      return {
+        ...transaction,
+        amountCents: netAmountCents,
+        grossAmountCents: transaction.amountCents,
+        refundedCents,
+        splits: scaleSplitsForNetAmount(transaction.splits, transaction.amountCents, netAmountCents),
+        refunds: linkedRefunds.map((refund) => ({
+          id: refund.id,
+          date: refund.date,
+          description: refund.description,
+          amountCents: refund.amountCents,
+        })),
+      }
+    })
+    .filter((transaction) => transaction.amountCents > 0)
+}
+
+function receivableFor(t: TransactionWithMeta) {
+  const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
+  if (splitTotal > 0) return Math.min(splitTotal, t.amountCents)
+  return t.transactionType === 'receivable' ? t.amountCents : 0
+}
+
+function ownExpenseFor(t: TransactionWithMeta) {
+  if (t.transactionType === 'receivable' && t.splits.length === 0) return 0
+  return Math.max(0, t.amountCents - receivableFor(t))
+}
 
 export async function getMonthlyReport(userId: string, month: string): Promise<MonthlyReport | null> {
   const [year, mon] = month.split('-').map(Number)
   if (!year || !mon) return null
 
-  const transactions = await prisma.transaction.findMany({
+  const rawTransactions = await prisma.transaction.findMany({
     where: {
       userId,
       status: 'approved',
-      isCredit: false,
       importSession: { month },
     },
     orderBy: { date: 'asc' },
@@ -22,17 +162,7 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
       },
     },
   })
-
-  const receivableFor = (t: (typeof transactions)[number]) => {
-    const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
-    if (splitTotal > 0) return Math.min(splitTotal, t.amountCents)
-    return t.transactionType === 'receivable' ? t.amountCents : 0
-  }
-
-  const ownExpenseFor = (t: (typeof transactions)[number]) => {
-    if (t.transactionType === 'receivable' && t.splits.length === 0) return 0
-    return Math.max(0, t.amountCents - receivableFor(t))
-  }
+  const transactions = prepareReportTransactions(rawTransactions)
 
   const totalExpenseCents = transactions.reduce((sum, t) => sum + ownExpenseFor(t), 0)
 
@@ -56,7 +186,7 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     if (!catMap[cat]) catMap[cat] = { totalCents: 0, subs: {} }
     catMap[cat].totalCents += ownExpense
     if (t.subcategory) {
-      catMap[cat].subs[t.subcategory] = (catMap[cat].subs[t.subcategory] || 0) + ownExpense
+      catMap[cat].subs[t.subcategory] = (catMap[t.category || 'Outros'].subs[t.subcategory] || 0) + ownExpense
     }
   }
   const byCategory = Object.entries(catMap)
@@ -104,10 +234,10 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
   for (const t of transactions) {
     if (t.splits.length > 0) {
       for (const split of t.splits) {
-        addDebtorAmount(split.debtorId, split.debtor?.name ?? split.debtorName, split.amountCents)
+        addDebtorAmount(split.debtorId, split.debtorName, split.amountCents)
       }
     } else if (t.transactionType === 'receivable') {
-      addDebtorAmount(t.debtorId, t.debtor?.name ?? t.debtorName, t.amountCents)
+      addDebtorAmount(t.debtorId, t.debtorName, t.amountCents)
     }
   }
   const debtors = await prisma.debtor.findMany({
@@ -150,27 +280,26 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     const d = new Date(year, mon - 1 - i, 1)
     const mStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
-    const mTxs = await prisma.transaction.findMany({
+    const monthRecords = await prisma.transaction.findMany({
       where: {
         userId,
         status: 'approved',
-        isCredit: false,
         importSession: { month: mStr },
       },
-      select: { amountCents: true, transactionType: true, splits: { select: { amountCents: true } } },
+      orderBy: { date: 'asc' },
+      include: {
+        debtor: { select: { id: true, name: true } },
+        splits: {
+          include: { debtor: { select: { id: true, name: true } } },
+        },
+      },
     })
+    const monthTransactions = prepareReportTransactions(monthRecords)
 
     monthlyTrend.push({
       month: mStr,
-      totalCents: mTxs.reduce((s, t) => {
-        const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
-        const receivable = splitTotal > 0 ? Math.min(splitTotal, t.amountCents) : t.transactionType === 'receivable' ? t.amountCents : 0
-        return s + Math.max(0, t.amountCents - receivable)
-      }, 0),
-      receivableCents: mTxs.reduce((s, t) => {
-        const splitTotal = t.splits.reduce((sum, split) => sum + split.amountCents, 0)
-        return s + (splitTotal > 0 ? Math.min(splitTotal, t.amountCents) : t.transactionType === 'receivable' ? t.amountCents : 0)
-      }, 0),
+      totalCents: monthTransactions.reduce((s, t) => s + ownExpenseFor(t), 0),
+      receivableCents: monthTransactions.reduce((s, t) => s + receivableFor(t), 0),
     })
   }
 
@@ -185,34 +314,6 @@ export async function getMonthlyReport(userId: string, month: string): Promise<M
     byBudgetGroup,
     byDebtor,
     monthlyTrend,
-    transactions: transactions.map((t) => ({
-      id: t.id,
-      date: t.date.toISOString().split('T')[0],
-      description: t.description,
-      amountCents: t.amountCents,
-      isCredit: t.isCredit,
-      isCharge: t.isCharge,
-      installmentCurrent: t.installmentCurrent,
-      installmentTotal: t.installmentTotal,
-      currencyOriginal: t.currencyOriginal,
-      amountOriginalCents: t.amountOriginalCents,
-      sourceType: t.sourceType,
-      cardLastFour: t.cardLastFour,
-      status: t.status,
-      transactionType: t.transactionType,
-      debtorId: t.debtorId,
-      debtorName: t.debtor?.name ?? t.debtorName,
-      splitMode: (t.splitMode as 'none' | 'equal' | 'custom') ?? 'none',
-      splits: t.splits.map((split) => ({
-        debtorId: split.debtorId,
-        debtorName: split.debtor?.name ?? split.debtorName,
-        amountCents: split.amountCents,
-      })),
-      category: t.category,
-      subcategory: t.subcategory,
-      notes: t.notes,
-      isEssential: t.isEssential,
-      importSessionId: t.importSessionId,
-    })),
+    transactions,
   }
 }
