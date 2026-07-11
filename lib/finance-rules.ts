@@ -8,6 +8,13 @@ export function hasDebtorReference(input: { debtorId?: string | null; debtorName
   return Boolean(input.debtorId || input.debtorName?.trim())
 }
 
+export function hasPositiveSplitWithoutDebtor(splits: TransactionSplitInput[] | null | undefined): boolean {
+  return (splits ?? []).some((split) => {
+    const amountCents = Math.max(0, Math.round(Number(split.amountCents) || 0))
+    return amountCents > 0 && !hasDebtorReference(split)
+  })
+}
+
 export function validateTransactionDecision(input: {
   amountCents: number
   transactionType?: TransactionType | string | null
@@ -16,15 +23,23 @@ export function validateTransactionDecision(input: {
   splitMode?: SplitMode | string | null
   splits?: TransactionSplitInput[] | null
 }): string | null {
-  if (input.transactionType === 'receivable' && !hasDebtorReference(input)) {
-    return 'Escolha um devedor antes de aprovar este gasto'
-  }
+  const usesSplits = Boolean(input.splitMode && input.splitMode !== 'none')
 
-  if (input.splitMode && input.splitMode !== 'none') {
+  if (usesSplits) {
     const total = splitTotalCents(input.splits)
+    if (total <= 0) {
+      return 'Informe ao menos uma pessoa no rateio'
+    }
+    if (hasPositiveSplitWithoutDebtor(input.splits)) {
+      return 'Informe o devedor de cada pessoa no rateio'
+    }
     if (total > input.amountCents) {
       return 'O rateio não pode ser maior que o valor da compra'
     }
+  }
+
+  if (input.transactionType === 'receivable' && !usesSplits && !hasDebtorReference(input)) {
+    return 'Escolha um devedor antes de aprovar este gasto'
   }
 
   return null

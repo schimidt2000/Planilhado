@@ -88,6 +88,61 @@ export interface MonthlyReport {
   transactions: TransactionWithMeta[]
 }
 
+export interface UserPreferences {
+  showDashboardTips: boolean
+  showReviewTips: boolean
+  showUploadTips: boolean
+}
+
+export interface SalaryEntryDTO {
+  id: string
+  effectiveMonth: string
+  amountCents: number
+  notes?: string | null
+  createdAt: string
+}
+
+export interface BillReminderDTO {
+  id: string
+  label: string
+  source?: string | null
+  dueDay: number
+  active: boolean
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ExtraIncomeDTO {
+  id: string
+  description: string
+  amountCents: number
+  expectedDate: string
+  status: 'planned' | 'received'
+  receivedAt?: string | null
+  notes?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UpcomingBillReminder {
+  id: string
+  label: string
+  source?: string | null
+  dueDay: number
+  dueDate: string
+  daysUntil: number
+}
+
+export interface FinanceSettingsSnapshot {
+  preferences: UserPreferences
+  salaryEntries: SalaryEntryDTO[]
+  currentSalary: SalaryEntryDTO | null
+  billReminders: BillReminderDTO[]
+  extraIncomes: ExtraIncomeDTO[]
+  upcomingBillReminders: UpcomingBillReminder[]
+}
+
 export interface TransactionWithMeta {
   id: string
   date: string

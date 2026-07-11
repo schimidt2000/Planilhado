@@ -16,6 +16,65 @@ model User {
   transactions   Transaction[]
   debtors        Debtor[]
   debtorPayments DebtorPayment[]
+  preferences    UserPreference?
+  salaryEntries  SalaryEntry[]
+  billReminders  BillReminder[]
+  extraIncomes   ExtraIncome[]
+}
+
+model UserPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  showDashboardTips Boolean  @default(true)
+  showReviewTips    Boolean  @default(true)
+  showUploadTips    Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model SalaryEntry {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  effectiveMonth String
+  amountCents    Int
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, effectiveMonth])
+}
+
+model BillReminder {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  source    String?
+  dueDay    Int
+  active    Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, active])
+}
+
+model ExtraIncome {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description  String
+  amountCents  Int
+  expectedDate DateTime
+  status       String    @default("planned")
+  receivedAt   DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, expectedDate])
+  @@index([userId, status])
 }
 
 model Debtor {

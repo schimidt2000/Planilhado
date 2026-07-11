@@ -49,8 +49,16 @@ export function ManualTransactionForm() {
   }
 
   function setSplitMode(splitMode: SplitMode) {
-    patch({ splitMode, transactionType: 'expense', debtorId: '', debtorName: '' })
-    if (splitMode !== 'none' && splits.length === 0) setSplits([{ debtorId: null, debtorName: '', amountCents: 0 }])
+    patch({
+      splitMode,
+      debtorId: splitMode === 'none' && form.transactionType === 'receivable' ? form.debtorId : '',
+      debtorName: splitMode === 'none' && form.transactionType === 'receivable' ? form.debtorName : '',
+    })
+    if (splitMode === 'none') {
+      setSplits([])
+      return
+    }
+    if (splits.length === 0) setSplits([{ debtorId: null, debtorName: '', amountCents: 0 }])
   }
 
   function normalizedSplits(current: TransactionSplitInput[]) {
@@ -100,8 +108,8 @@ export function ManualTransactionForm() {
       body: JSON.stringify({
         ...form,
         amountCents,
-        debtorId: form.transactionType === 'receivable' ? form.debtorId : null,
-        debtorName: form.transactionType === 'receivable' ? form.debtorName : null,
+        debtorId: form.transactionType === 'receivable' && form.splitMode === 'none' ? form.debtorId : null,
+        debtorName: form.transactionType === 'receivable' && form.splitMode === 'none' ? form.debtorName : null,
         splits: preparedSplits,
       }),
     })
@@ -168,9 +176,8 @@ export function ManualTransactionForm() {
             value={form.transactionType}
             onValueChange={(transactionType) => patch({
               transactionType: transactionType || 'expense',
-              splitMode: transactionType === 'receivable' ? 'none' : form.splitMode,
-              debtorId: transactionType === 'receivable' ? form.debtorId : '',
-              debtorName: transactionType === 'receivable' ? form.debtorName : '',
+              debtorId: transactionType === 'receivable' && form.splitMode === 'none' ? form.debtorId : '',
+              debtorName: transactionType === 'receivable' && form.splitMode === 'none' ? form.debtorName : '',
             })}
           >
             <SelectTrigger>
@@ -182,7 +189,7 @@ export function ManualTransactionForm() {
             </SelectContent>
           </Select>
         </div>
-        {form.transactionType === 'receivable' ? (
+        {form.transactionType === 'receivable' && form.splitMode === 'none' && (
           <div className="space-y-1.5">
             <Label>Devedor</Label>
             <Select value={form.debtorId || 'none'} onValueChange={setDebtor}>
@@ -195,30 +202,29 @@ export function ManualTransactionForm() {
               </SelectContent>
             </Select>
           </div>
-        ) : (
-          <div className="space-y-1.5">
-            <Label>Rateio</Label>
-            <Select value={form.splitMode} onValueChange={(value) => setSplitMode((value || 'none') as SplitMode)}>
-              <SelectTrigger>
-                <SelectValue>
-                  {form.splitMode === 'equal' ? 'Dividir igualmente' : form.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Sem rateio</SelectItem>
-                <SelectItem value="equal">Dividir igualmente</SelectItem>
-                <SelectItem value="custom">Valores personalizados</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         )}
+        <div className="space-y-1.5">
+          <Label>Rateio</Label>
+          <Select value={form.splitMode} onValueChange={(value) => setSplitMode((value || 'none') as SplitMode)}>
+            <SelectTrigger>
+              <SelectValue>
+                {form.splitMode === 'equal' ? 'Dividir igualmente' : form.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem rateio</SelectItem>
+              <SelectItem value="equal">Dividir igualmente</SelectItem>
+              <SelectItem value="custom">Valores personalizados</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="manual-notes">Observações</Label>
           <Input id="manual-notes" value={form.notes} onChange={(event) => patch({ notes: event.target.value })} placeholder="Opcional" />
         </div>
       </div>
 
-      {form.transactionType === 'expense' && form.splitMode !== 'none' && (
+      {form.splitMode !== 'none' && (
         <div className="space-y-3 border-t pt-4">
           <div className="flex items-center justify-between">
             <div>
@@ -257,7 +263,7 @@ export function ManualTransactionForm() {
         </div>
       )}
 
-      {form.transactionType === 'expense' && form.splitMode !== 'none' && splitTotalCents(normalizedSplits(splits)) > Math.round(Number(form.amount || 0) * 100) && (
+      {form.splitMode !== 'none' && splitTotalCents(normalizedSplits(splits)) > Math.round(Number(form.amount || 0) * 100) && (
         <p className="text-sm text-destructive">O rateio não pode ser maior que o valor da compra.</p>
       )}
       <div className="flex justify-end border-t pt-5">

@@ -36,6 +36,28 @@ describe('finance rules', () => {
     })).toBe('O rateio não pode ser maior que o valor da compra')
   })
 
+  it('allows a receivable with a valid split instead of one debtor', () => {
+    expect(validateTransactionDecision({
+      amountCents: 5000,
+      transactionType: 'receivable',
+      splitMode: 'custom',
+      splits: [
+        { debtorId: 'debtor-1', debtorName: 'Erika', amountCents: 2500 },
+      ],
+    })).toBeNull()
+  })
+
+  it('blocks approving a split without positive debtor amounts', () => {
+    expect(validateTransactionDecision({
+      amountCents: 5000,
+      transactionType: 'expense',
+      splitMode: 'custom',
+      splits: [
+        { debtorId: null, debtorName: '', amountCents: 0 },
+      ],
+    })).toBe('Informe ao menos uma pessoa no rateio')
+  })
+
   it('computes remaining balance without going negative', () => {
     expect(remainingBalanceCents(5000, 1200)).toBe(3800)
     expect(remainingBalanceCents(5000, 6000)).toBe(0)

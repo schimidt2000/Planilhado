@@ -7,6 +7,8 @@ import { getMonthlyReport } from '@/lib/get-report'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { prisma } from '@/lib/db'
+import { getFinanceSettings } from '@/lib/finance-settings'
+import { GuidanceCards } from '@/components/GuidanceCards'
 
 interface Props {
   searchParams: Promise<{ m?: string }>
@@ -20,6 +22,7 @@ export default async function DashboardPage({ searchParams }: Props) {
   const month = m || currentMonth()
 
   const report = await getMonthlyReport(session.user.id, month)
+  const settings = await getFinanceSettings(session.user.id)
   const monthImportSessions = await prisma.importSession.findMany({
     where: { userId: session.user.id, month },
     select: { id: true },
@@ -45,6 +48,7 @@ export default async function DashboardPage({ searchParams }: Props) {
             )}
           </div>
         </div>
+        <GuidanceCards scope="dashboard" initialEnabled={settings.preferences.showDashboardTips} />
         <div className="text-center py-16 text-muted-foreground">
           <p className="text-lg mb-2">Nenhuma transação aprovada em {month}</p>
           <p className="text-sm mb-6">Você pode importar arquivos novos ou reabrir as importações já feitas para revisar gastos pendentes.</p>
@@ -68,7 +72,7 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <Suspense fallback={<p className="text-center py-12 text-muted-foreground">Carregando...</p>}>
-      <MonthlyDashboard report={report} month={month} />
+      <MonthlyDashboard report={report} month={month} settings={settings} />
     </Suspense>
   )
 }

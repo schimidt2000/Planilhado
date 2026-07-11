@@ -11,7 +11,8 @@ import { SpendingDonut } from './charts/SpendingDonut'
 import { MonthlyTrend } from './charts/MonthlyTrend'
 import { DebtorBar } from './charts/DebtorBar'
 import { DebtorReceivables } from './DebtorReceivables'
-import type { MonthlyReport } from '@/lib/types'
+import { GuidanceCards } from './GuidanceCards'
+import type { FinanceSettingsSnapshot, MonthlyReport } from '@/lib/types'
 
 const SOURCE_COLORS: Record<string, string> = {
   nubank: 'bg-violet-100 text-violet-800',
@@ -23,10 +24,16 @@ const SOURCE_COLORS: Record<string, string> = {
 interface Props {
   report: MonthlyReport
   month: string
+  settings: FinanceSettingsSnapshot
 }
 
-export function MonthlyDashboard({ report, month }: Props) {
+export function MonthlyDashboard({ report, month, settings }: Props) {
   const isCurrentMonth = month === currentMonth()
+  const extraIncome = settings.extraIncomes
+    .filter((income) => income.expectedDate.slice(0, 7) === month)
+    .reduce((sum, income) => sum + income.amountCents, 0)
+  const expectedIncome = (settings.currentSalary?.amountCents ?? 0) + extraIncome
+  const projectedBalance = expectedIncome - report.totalExpenseCents + report.totalReceivableCents
 
   return (
     <div className="space-y-6">
@@ -51,6 +58,52 @@ export function MonthlyDashboard({ report, month }: Props) {
             <Button variant="outline" size="sm" className="flex-1 sm:flex-none"><FileText className="size-4" /> Relatório</Button>
           </Link>
         </div>
+      </div>
+
+      <GuidanceCards scope="dashboard" initialEnabled={settings.preferences.showDashboardTips} />
+
+      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Renda prevista do mês</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Salário</p>
+              <p className="font-semibold">{settings.currentSalary ? formatCents(settings.currentSalary.amountCents) : 'Não informado'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Extras</p>
+              <p className="font-semibold">{formatCents(extraIncome)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Projeção</p>
+              <p className={`font-semibold ${projectedBalance >= 0 ? 'text-green-600' : 'text-destructive'}`}>
+                {expectedIncome > 0 ? formatCents(projectedBalance) : 'Configure sua renda'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Próximas faturas</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {settings.upcomingBillReminders.slice(0, 3).map((reminder) => (
+              <div key={reminder.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium">{reminder.label}</span>
+                <Badge variant={reminder.daysUntil <= 3 ? 'destructive' : 'outline'}>
+                  {reminder.daysUntil === 0 ? 'Hoje' : `${reminder.daysUntil} dia(s)`}
+                </Badge>
+              </div>
+            ))}
+            {settings.upcomingBillReminders.length === 0 && (
+              <Link href="/settings">
+                <Button variant="outline" size="sm">Cadastrar vencimentos</Button>
+              </Link>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Summary cards */}
@@ -156,7 +209,7 @@ export function MonthlyDashboard({ report, month }: Props) {
           <CardContent>
             <DebtorBar data={report.byDebtor} />
             {report.byDebtor.length > 0 && (
-              <DebtorReceivables debtors={report.byDebtor} month={month} />
+              <DebtorReceivables debtors={report.byDebtor} month={month} transactions={report.transactions} />
             )}
           </CardContent>
         </Card>

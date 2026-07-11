@@ -1,14 +1,24 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check } from 'lucide-react'
+import { Check, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TransactionReviewCard } from '@/components/TransactionReviewCard'
 import { toast } from 'sonner'
 import { validateTransactionDecision } from '@/lib/finance-rules'
+import {
+  buildChargeGroups,
+  buildLinkedChargeUpdate,
+  buildReviewUpdate,
+  compareReviewTransactions,
+  type ReviewSortMode,
+} from '@/lib/review-queue'
+import { GuidanceCards } from '@/components/GuidanceCards'
 import type { TransactionWithMeta } from '@/lib/types'
 
 interface Session {
@@ -20,10 +30,18 @@ interface Session {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
-  nubank: 'Nubank', inter: 'Inter', picpay: 'PicPay', pix: 'Pix',
+  nubank: 'Nubank', inter: 'Inter', picpay: 'PicPay', pix: 'Pix', manual: 'Manual',
 }
 
-export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
+const SORT_LABELS: Record<ReviewSortMode, string> = {
+  'date-asc': 'Data crescente',
+  'date-desc': 'Data decrescente',
+  'amount-desc': 'Maior valor',
+  'amount-asc': 'Menor valor',
+  source: 'Fonte',
+}
+
+export function ReviewWorkspace({ sessionIds, tipsEnabled = true }: { sessionIds: string[]; tipsEnabled?: boolean }) {
   const router = useRouter()
 
   const [sessions, setSessions] = useState<Session[]>([])
@@ -31,6 +49,8 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [decided, setDecided] = useState({ approved: 0, rejected: 0 })
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [sortMode, setSortMode] = useState<ReviewSortMode>('date-asc')
 
   useEffect(() => {
     async function loadSessions() {
@@ -73,6 +93,22 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
     setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, ...patch } : t))
   }, [])
 
+  const chargeGroups = useMemo(() => buildChargeGroups(transactions), [transactions])
+
+  const sourceOptions = useMemo(() => {
+    return Array.from(new Set(transactions.map((transaction) => transaction.sourceType)))
+      .sort((a, b) => (SOURCE_LABELS[a] ?? a).localeCompare(SOURCE_LABELS[b] ?? b, 'pt-BR'))
+  }, [transactions])
+
+  const visibleTransactions = useMemo(() => {
+    return transactions
+      .filter((transaction) => !chargeGroups.groupedChargeIds.has(transaction.id))
+      .filter((transaction) => sourceFilter === 'all' || transaction.sourceType === sourceFilter)
+      .sort((a, b) => compareReviewTransactions(sortMode, a, b))
+  }, [chargeGroups, sourceFilter, sortMode, transactions])
+
+  const groupedChargeCount = chargeGroups.groupedChargeIds.size
+
   const handleDecision = useCallback(async (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => {
     if (status === 'approved') {
       const validationError = validateTransactionDecision({
@@ -89,50 +125,31 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
       }
     }
 
-    const response = await fetch(`/api/transactions/${transaction.id}`, {
-      method: 'PATCH',
+    const linkedCharges = chargeGroups.linkedChargesByParentId.get(transaction.id) ?? []
+    const updates = [
+      buildReviewUpdate(transaction, status),
+      ...linkedCharges.map((charge) => buildLinkedChargeUpdate(transaction, charge, status)),
+    ]
+
+    const response = await fetch('/api/transactions/batch-review', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status,
-        transactionType: transaction.transactionType,
-        debtorId: transaction.debtorId,
-        debtorName: transaction.debtorName,
-        splitMode: transaction.splitMode,
-        splits: transaction.splits,
-        category: transaction.category,
-        subcategory: transaction.subcategory,
-        notes: transaction.notes,
-        isEssential: transaction.isEssential,
-        installmentCurrent: transaction.installmentCurrent,
-        installmentTotal: transaction.installmentTotal,
-      }),
+      body: JSON.stringify({ updates }),
     })
     if (!response.ok) {
       toast.error('Não foi possível salvar a decisão')
       return
     }
-    setTransactions((current) => current.filter((item) => item.id !== transaction.id))
-    setDecided((current) => ({ ...current, [status]: current[status] + 1 }))
-    toast.success(status === 'approved' ? 'Gasto aprovado' : 'Gasto recusado')
-  }, [])
+    const decidedIds = new Set(updates.map((item) => item.id))
+    setTransactions((current) => current.filter((item) => !decidedIds.has(item.id)))
+    setDecided((current) => ({ ...current, [status]: current[status] + updates.length }))
+    const suffix = linkedCharges.length > 0 ? ` com ${linkedCharges.length} IOF vinculado(s)` : ''
+    toast.success(status === 'approved' ? `Gasto aprovado${suffix}` : `Gasto recusado${suffix}`)
+  }, [chargeGroups])
 
   async function handleSave() {
     setSaving(true)
-    const updates = transactions.map((t) => ({
-      id: t.id,
-      status: t.status,
-      transactionType: t.transactionType,
-      debtorId: t.debtorId,
-      debtorName: t.debtorName,
-      splitMode: t.splitMode,
-      splits: t.splits,
-      category: t.category,
-      subcategory: t.subcategory,
-      notes: t.notes,
-      isEssential: t.isEssential,
-      installmentCurrent: t.installmentCurrent,
-      installmentTotal: t.installmentTotal,
-    }))
+    const updates = transactions.map((t) => buildReviewUpdate(t, t.status === 'approved' || t.status === 'rejected' ? t.status : 'pending'))
 
     const res = await fetch('/api/transactions/batch-review', {
       method: 'POST',
@@ -167,7 +184,7 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
             Revisão de gastos
           </h1>
           <p className="text-sm text-muted-foreground">
-            {month} · {sessions.length} arquivo(s) · {transactions.length} transações
+            {month} · {sessions.length} arquivo(s) · {transactions.length} pendentes
           </p>
         </div>
         <div className="flex gap-2">
@@ -194,6 +211,45 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
         ))}
       </div>
 
+      <GuidanceCards scope="review" initialEnabled={tipsEnabled} />
+
+      <div className="grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="space-y-1">
+          <Label className="text-xs">Filtrar fonte</Label>
+          <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value || 'all')}>
+            <SelectTrigger className="w-full">
+              <SelectValue>{sourceFilter === 'all' ? 'Todas as fontes' : SOURCE_LABELS[sourceFilter] ?? sourceFilter}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as fontes</SelectItem>
+              {sourceOptions.map((source) => (
+                <SelectItem key={source} value={source}>{SOURCE_LABELS[source] ?? source}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Ordenar por</Label>
+          <Select value={sortMode} onValueChange={(value) => setSortMode((value || 'date-asc') as ReviewSortMode)}>
+            <SelectTrigger className="w-full">
+              <SelectValue>{SORT_LABELS[sortMode]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date-asc">Data crescente</SelectItem>
+              <SelectItem value="date-desc">Data decrescente</SelectItem>
+              <SelectItem value="amount-desc">Maior valor</SelectItem>
+              <SelectItem value="amount-asc">Menor valor</SelectItem>
+              <SelectItem value="source">Fonte</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex min-h-8 items-center gap-2 text-xs text-muted-foreground sm:justify-end">
+          <SlidersHorizontal className="size-4" />
+          <span>{visibleTransactions.length} visível(is)</span>
+          {groupedChargeCount > 0 && <span>· {groupedChargeCount} IOF agrupado(s)</span>}
+        </div>
+      </div>
+
       <div className="space-y-2">
         {transactions.length === 0 && (
           <div className="border py-12 text-center">
@@ -203,8 +259,19 @@ export function ReviewWorkspace({ sessionIds }: { sessionIds: string[] }) {
             <Button className="mt-4" onClick={() => router.push(`/dashboard?m=${month}`)}>Ver dashboard</Button>
           </div>
         )}
-        {transactions.map((tx) => (
-          <TransactionReviewCard key={tx.id} transaction={tx} onChange={handleChange} onDecide={handleDecision} />
+        {transactions.length > 0 && visibleTransactions.length === 0 && (
+          <div className="border py-10 text-center text-sm text-muted-foreground">
+            Nenhum gasto encontrado com os filtros atuais.
+          </div>
+        )}
+        {visibleTransactions.map((tx) => (
+          <TransactionReviewCard
+            key={tx.id}
+            transaction={tx}
+            linkedCharges={chargeGroups.linkedChargesByParentId.get(tx.id) ?? []}
+            onChange={handleChange}
+            onDecide={handleDecision}
+          />
         ))}
       </div>
 

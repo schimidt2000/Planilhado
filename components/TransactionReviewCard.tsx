@@ -15,6 +15,7 @@ import type { Debtor, SplitMode, TransactionSplitInput, TransactionWithMeta, Sug
 
 interface Props {
   transaction: TransactionWithMeta
+  linkedCharges?: TransactionWithMeta[]
   onChange: (id: string, patch: Partial<TransactionWithMeta>) => void
   onDecide: (transaction: TransactionWithMeta, status: 'approved' | 'rejected') => Promise<void>
 }
@@ -24,9 +25,10 @@ const SOURCE_LABELS: Record<string, string> = {
   inter: 'Inter',
   picpay: 'PicPay',
   pix: 'Pix',
+  manual: 'Manual',
 }
 
-export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: Props) {
+export function TransactionReviewCard({ transaction: tx, linkedCharges = [], onChange, onDecide }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [suggestion, setSuggestion] = useState<SuggestionResult | null>(null)
   const [suggestionLoading, setSuggestionLoading] = useState(false)
@@ -73,13 +75,18 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
 
   function setSplitMode(splitMode: SplitMode) {
     if (splitMode === 'none') {
-      onChange(tx.id, { splitMode, splits: [], debtorId: null, debtorName: null, transactionType: 'expense' })
+      onChange(tx.id, {
+        splitMode,
+        splits: [],
+        debtorId: tx.transactionType === 'receivable' ? tx.debtorId : null,
+        debtorName: tx.transactionType === 'receivable' ? tx.debtorName : null,
+      })
       return
     }
 
     onChange(tx.id, {
       splitMode,
-      transactionType: 'expense',
+      transactionType: tx.transactionType === 'receivable' ? 'receivable' : 'expense',
       debtorId: null,
       debtorName: null,
       splits: tx.splits?.length ? normalizeSplits(splitMode, tx.splits) : [{ debtorId: null, debtorName: '', amountCents: 0 }],
@@ -145,6 +152,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
     splitMode: tx.splitMode,
     splits: tx.splits,
   })
+  const linkedChargesTotal = linkedCharges.reduce((sum, charge) => sum + charge.amountCents, 0)
 
   return (
     <Card className={`transition-all ${tx.isCharge ? 'border-amber-200' : ''}`}>
@@ -155,6 +163,11 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-medium text-sm truncate">{tx.description}</span>
               {tx.isCharge && <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">Encargo</Badge>}
+              {linkedCharges.length > 0 && (
+                <Badge variant="outline" className="text-xs border-amber-400 text-amber-700">
+                  IOF +{formatCents(linkedChargesTotal)}
+                </Badge>
+              )}
               {tx.installmentCurrent && tx.installmentTotal && (
                 <Badge variant="outline" className="text-xs">{tx.installmentCurrent}/{tx.installmentTotal}</Badge>
               )}
@@ -183,6 +196,22 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
         {/* Expanded detail panel */}
         {expanded && (
           <div className="mt-4 pt-4 border-t space-y-3">
+            {linkedCharges.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-medium text-amber-900">IOF vinculado automaticamente</p>
+                <div className="mt-2 space-y-1 text-xs text-amber-900">
+                  {linkedCharges.map((charge) => (
+                    <div key={charge.id} className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate">
+                        {new Date(charge.date).toLocaleDateString('pt-BR')} · {charge.description}
+                      </span>
+                      <span className="shrink-0 font-medium">{formatCents(charge.amountCents)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {suggestion && (
               <div className="p-2 rounded bg-blue-50 border border-blue-200 flex items-center justify-between">
                 <div className="text-xs text-blue-700">
@@ -204,12 +233,11 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                   value={tx.transactionType ?? ''}
                   onValueChange={(v) => {
                     const transactionType = (v as TransactionType) || null
+                    const hasSplits = tx.splitMode !== 'none'
                     onChange(tx.id, {
                       transactionType,
-                      debtorId: transactionType === 'receivable' ? tx.debtorId : null,
-                      debtorName: transactionType === 'receivable' ? tx.debtorName : null,
-                      splitMode: transactionType === 'receivable' ? 'none' : tx.splitMode,
-                      splits: transactionType === 'receivable' ? [] : tx.splits,
+                      debtorId: transactionType === 'receivable' && !hasSplits ? tx.debtorId : null,
+                      debtorName: transactionType === 'receivable' && !hasSplits ? tx.debtorName : null,
                     })
                   }}
                 >
@@ -225,7 +253,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                 </Select>
               </div>
 
-              {tx.transactionType === 'receivable' && (
+              {tx.transactionType === 'receivable' && tx.splitMode === 'none' && (
                 <div>
                   <Label className="text-xs">Devedor</Label>
                   <Select
@@ -250,26 +278,24 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
                 </div>
               )}
 
-              {tx.transactionType !== 'receivable' && (
-                <div>
-                  <Label className="text-xs">Rateio</Label>
-                  <Select
-                    value={tx.splitMode ?? 'none'}
-                    onValueChange={(v) => setSplitMode(v as SplitMode)}
-                  >
-                    <SelectTrigger className="h-8 text-xs mt-1">
-                      <SelectValue placeholder="Rateio...">
-                        {tx.splitMode === 'equal' ? 'Dividir igualmente' : tx.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sem rateio</SelectItem>
-                      <SelectItem value="equal">Dividir igualmente</SelectItem>
-                      <SelectItem value="custom">Valores personalizados</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div>
+                <Label className="text-xs">Rateio</Label>
+                <Select
+                  value={tx.splitMode ?? 'none'}
+                  onValueChange={(v) => setSplitMode(v as SplitMode)}
+                >
+                  <SelectTrigger className="h-8 text-xs mt-1">
+                    <SelectValue placeholder="Rateio...">
+                      {tx.splitMode === 'equal' ? 'Dividir igualmente' : tx.splitMode === 'custom' ? 'Valores personalizados' : 'Sem rateio'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sem rateio</SelectItem>
+                    <SelectItem value="equal">Dividir igualmente</SelectItem>
+                    <SelectItem value="custom">Valores personalizados</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div>
                 <Label className="text-xs">Categoria</Label>
@@ -318,7 +344,7 @@ export function TransactionReviewCard({ transaction: tx, onChange, onDecide }: P
               </div>
             </div>
 
-            {tx.transactionType !== 'receivable' && tx.splitMode !== 'none' && (
+            {tx.splitMode !== 'none' && (
               <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>

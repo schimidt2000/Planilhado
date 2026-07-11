@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { CirclePlus, FileText, LayoutDashboard, Upload, Users } from 'lucide-react'
+import { CirclePlus, FileText, LayoutDashboard, Settings, Upload, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const items = [
@@ -11,6 +11,7 @@ const items = [
   { href: '/manual', label: 'Novo gasto', mobileLabel: 'Novo', icon: CirclePlus },
   { href: '/imports', label: 'Importações', mobileLabel: 'Arquivos', icon: FileText },
   { href: '/debtors', label: 'Devedores', mobileLabel: 'Pessoas', icon: Users },
+  { href: '/settings', label: 'Configurações', mobileLabel: 'Ajustes', icon: Settings },
 ]
 
 function isActive(pathname: string, href: string) {
@@ -44,7 +45,7 @@ export function AppNavigation() {
       </nav>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t bg-background/95 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t bg-background/95 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur lg:hidden"
         aria-label="Navegação principal"
       >
         {items.map((item) => {
